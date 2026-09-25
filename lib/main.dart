@@ -2358,6 +2358,31 @@ class ViewingRequests {
 // LANDLORD LISTING MODEL
 // ============================================================
 
+// ============================================================
+// AGENT → OWNER REPRESENTATION REQUEST
+// ============================================================
+
+class OwnerRepresentationRequest {
+  final String id;
+  final String propertyId;
+  final String agentId;
+  final String ownerName;
+  final String ownerPhone;
+  final String ownerEmail;
+  final String status;
+  final DateTime createdAt;
+
+  OwnerRepresentationRequest({
+    required this.id,
+    required this.propertyId,
+    required this.agentId,
+    required this.ownerName,
+    required this.ownerPhone,
+    required this.ownerEmail,
+    required this.status,
+    required this.createdAt,
+  });
+}
 class LandlordListing {
   final String id;
   final String ownerId;
@@ -7291,6 +7316,53 @@ bool isAgent = false;
               );
             },
           ),
+
+          // ============================================================
+          // OWNER REQUESTS — AGENT ONLY
+          // ============================================================
+
+          if (isAgent) ...[
+            const SizedBox(height: 12),
+
+            _dashboardButton(
+              context,
+              Icons.handshake_outlined,
+              'Owner Requests',
+              'Track properties you are listing for owners',
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        const AgentOwnerRequestsScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
+          // ============================================================
+// AGENT REQUESTS — LANDLORD ONLY
+// ============================================================
+
+if (isLandlord) ...[
+  const SizedBox(height: 12),
+
+  _dashboardButton(
+    context,
+    Icons.handshake_outlined,
+    'Agent Requests',
+    'Review requests from agents to manage your properties',
+    () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              const OwnerAgentRequestsScreen(),
+        ),
+      );
+    },
+  ),
+],
         ],
       ),
     );
@@ -8558,6 +8630,35 @@ if (!kenyaPhoneRegex.hasMatch(ownerPhone)) {
   );
   return;
 }
+// Validate owner email.
+  final ownerEmail =
+      ownerEmailController.text.trim();
+
+  if (ownerEmail.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Please enter the property owner\'s email address.',
+        ),
+      ),
+    );
+    return;
+  }
+
+  final emailRegex = RegExp(
+    r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+  );
+
+  if (!emailRegex.hasMatch(ownerEmail)) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Please enter a valid owner email address.',
+        ),
+      ),
+    );
+    return;
+  }
     }
   final listingId =
       DateTime.now().millisecondsSinceEpoch.toString();
@@ -8649,7 +8750,59 @@ if (!kenyaPhoneRegex.hasMatch(ownerPhone)) {
       'status': 'pending',
       'verified': false,
     });
+// ============================================================
+// CREATE OWNER REPRESENTATION REQUEST
+// ============================================================
 
+if (isAgent && listingForOwner) {
+  final requestId =
+      FirebaseFirestore.instance
+          .collection('ownerRequests')
+          .doc()
+          .id;
+
+  final ownerEmail =
+      ownerEmailController.text.trim().toLowerCase();
+
+  // Check whether the owner already has a RentalApp account.
+  String? ownerUid;
+
+  final ownerQuery = await FirebaseFirestore.instance
+      .collection('users')
+      .where(
+        'email',
+        isEqualTo: ownerEmail,
+      )
+      .limit(1)
+      .get();
+
+  if (ownerQuery.docs.isNotEmpty) {
+    ownerUid = ownerQuery.docs.first.id;
+  }
+
+  await FirebaseFirestore.instance
+      .collection('ownerRequests')
+      .doc(requestId)
+      .set({
+    'id': requestId,
+    'propertyId': listing.id,
+    'agentId':
+        FirebaseAuth.instance.currentUser!.uid,
+
+    'ownerUid': ownerUid,
+
+    'ownerName':
+        ownerNameController.text.trim(),
+    'ownerPhone':
+        ownerPhoneController.text.trim(),
+    'ownerEmail': ownerEmail,
+
+    'status': 'pending',
+
+    'createdAt':
+        FieldValue.serverTimestamp(),
+  });
+}
     setState(() {
       isSubmitting = false;
     });
@@ -8961,7 +9114,7 @@ if (isAgent && listingForOwner) ...[
     keyboardType: TextInputType.emailAddress,
     textInputAction: TextInputAction.next,
     decoration: InputDecoration(
-      labelText: 'Owner email (optional)',
+      labelText: 'Owner email',
       hintText: 'e.g. owner@email.com',
       prefixIcon: const Icon(Icons.email_outlined),
       border: OutlineInputBorder(
@@ -11264,6 +11417,1190 @@ class _MainNavigationScreenState
             label: 'Profile',
           ),
         ],
+      ),
+    );
+  }
+}
+// ============================================================
+// AGENT OWNER REQUESTS SCREEN
+// ============================================================
+
+class AgentOwnerRequestsScreen extends StatelessWidget {
+  const AgentOwnerRequestsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      return const Scaffold(
+        body: Center(
+          child: Text(
+            'Please login to view owner requests.',
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Owner Requests'),
+      ),
+      backgroundColor: const Color(0xFFFAFAFA),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('ownerRequests')
+            .where(
+              'agentId',
+              isEqualTo: user.uid,
+            )
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState ==
+              ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(
+                  'Could not load owner requests.\n\n'
+                  '${snapshot.error}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
+
+          final documents =
+              snapshot.data?.docs ?? [];
+
+          if (documents.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(30),
+                child: Text(
+                  'You do not have any owner requests yet.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: secondaryTextColor,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: documents.length,
+            itemBuilder: (context, index) {
+              final data =
+                  documents[index].data()
+                      as Map<String, dynamic>;
+
+              final ownerName =
+                  data['ownerName']?.toString() ??
+                      'Unknown owner';
+
+              final ownerPhone =
+                  data['ownerPhone']?.toString() ?? '';
+
+              final ownerEmail =
+                  data['ownerEmail']?.toString() ?? '';
+
+              final status =
+                  data['status']?.toString() ??
+                      'pending';
+
+              final propertyId =
+                  data['propertyId']?.toString() ?? '';
+
+              return Card(
+                margin:
+                    const EdgeInsets.only(bottom: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius:
+                      BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.person_outline,
+                            color: primaryOrange,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              ownerName,
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight:
+                                    FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            status.toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight:
+                                  FontWeight.bold,
+                              color: secondaryTextColor,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      Text(
+                        'Phone: $ownerPhone',
+                        style: const TextStyle(
+                          color: secondaryTextColor,
+                        ),
+                      ),
+
+                      const SizedBox(height: 6),
+
+                      Text(
+                        'Email: $ownerEmail',
+                        style: const TextStyle(
+                          color: secondaryTextColor,
+                        ),
+                      ),
+
+                      const SizedBox(height: 6),
+
+                      Text(
+                        'Property ID: $propertyId',
+                        style: const TextStyle(
+                          color: secondaryTextColor,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+// ============================================================
+// OWNER AGENT REQUESTS SCREEN
+// ============================================================
+
+class OwnerAgentRequestsScreen extends StatelessWidget {
+  const OwnerAgentRequestsScreen({super.key});
+
+  // ============================================================
+  // APPROVE REQUEST
+  // ============================================================
+
+  Future<void> _approveRequest(
+    BuildContext context,
+    String requestId,
+    Map<String, dynamic> data,
+  ) async {
+    final propertyId =
+        data['propertyId']?.toString() ?? '';
+
+    final agentId =
+        data['agentId']?.toString() ?? '';
+
+    final ownerUid =
+        data['ownerUid']?.toString() ?? '';
+
+    if (propertyId.isEmpty ||
+        agentId.isEmpty ||
+        ownerUid.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This request is missing required information and cannot be approved.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(
+            'Approve Agent?',
+          ),
+          content: const Text(
+            'This will authorize the agent to manage this property on your behalf.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  false,
+                );
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  true,
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryOrange,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Approve'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
+    try {
+      final firestore =
+          FirebaseFirestore.instance;
+
+      final batch =
+          firestore.batch();
+
+      final requestRef = firestore
+          .collection('ownerRequests')
+          .doc(requestId);
+
+      final propertyRef = firestore
+          .collection('properties')
+          .doc(propertyId);
+
+      // ==========================================================
+      // UPDATE REQUEST
+      // ==========================================================
+
+      batch.update(
+        requestRef,
+        {
+          'status': 'approved',
+          'approvedAt':
+              FieldValue.serverTimestamp(),
+          'rejectionReason':
+              FieldValue.delete(),
+          'rejectedAt':
+              FieldValue.delete(),
+        },
+      );
+
+      // ==========================================================
+      // UPDATE PROPERTY RELATIONSHIP
+      // ==========================================================
+
+      batch.update(
+        propertyRef,
+        {
+          'ownerId': ownerUid,
+          'ownerType': 'landlord',
+          'managedById': agentId,
+          'managedByType': 'agent',
+          'ownerApprovalStatus': 'approved',
+          'representationStatus': 'approved',
+          'ownerApprovedAt':
+              FieldValue.serverTimestamp(),
+        },
+      );
+
+      await batch.commit();
+
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Agent approved successfully.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not approve the request.\n$e',
+          ),
+        ),
+      );
+    }
+  }
+
+  // ============================================================
+  // REJECT REQUEST
+  // ============================================================
+
+  Future<void> _rejectRequest(
+    BuildContext context,
+    String requestId,
+    Map<String, dynamic> data,
+  ) async {
+    final propertyId =
+        data['propertyId']?.toString() ?? '';
+
+    final reasons = <String>[
+      'I do not know this agent',
+      'Property information is incorrect',
+      'I no longer want the property listed',
+      'I already have another agent',
+      'I am not the property owner',
+      'Other',
+    ];
+
+    String? selectedReason;
+
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (
+            context,
+            setDialogState,
+          ) {
+            return AlertDialog(
+              title: const Text(
+                'Reject Agent Request',
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize:
+                      MainAxisSize.min,
+                  children: [
+                    const Align(
+                      alignment:
+                          Alignment.centerLeft,
+                      child: Text(
+                        'Why are you rejecting this request?',
+                        style: TextStyle(
+                          color:
+                              secondaryTextColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    ...reasons.map(
+                      (item) {
+                        return RadioListTile<String>(
+                          value: item,
+                          groupValue:
+                              selectedReason,
+                          contentPadding:
+                              EdgeInsets.zero,
+                          title: Text(
+                            item,
+                            style:
+                                const TextStyle(
+                              fontSize: 14,
+                            ),
+                          ),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedReason =
+                                  value;
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(
+                      dialogContext,
+                    );
+                  },
+                  child:
+                      const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed:
+                      selectedReason == null
+                          ? null
+                          : () {
+                              Navigator.pop(
+                                dialogContext,
+                                selectedReason,
+                              );
+                            },
+                  style:
+                      ElevatedButton.styleFrom(
+                    backgroundColor:
+                        Colors.red,
+                    foregroundColor:
+                        Colors.white,
+                  ),
+                  child:
+                      const Text('Reject'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (reason == null) {
+      return;
+    }
+
+    try {
+      final firestore =
+          FirebaseFirestore.instance;
+
+      final batch =
+          firestore.batch();
+
+      final requestRef = firestore
+          .collection('ownerRequests')
+          .doc(requestId);
+
+      // ==========================================================
+      // UPDATE REQUEST
+      // ==========================================================
+
+      batch.update(
+        requestRef,
+        {
+          'status': 'rejected',
+          'rejectedAt':
+              FieldValue.serverTimestamp(),
+          'rejectionReason': reason,
+          'approvedAt':
+              FieldValue.delete(),
+        },
+      );
+
+      // ==========================================================
+      // UPDATE PROPERTY
+      // ==========================================================
+
+      if (propertyId.isNotEmpty) {
+        final propertyRef = firestore
+            .collection('properties')
+            .doc(propertyId);
+
+        batch.update(
+          propertyRef,
+          {
+            'ownerApprovalStatus':
+                'rejected',
+            'representationStatus':
+                'rejected',
+            'rejectionReason':
+                reason,
+          },
+        );
+      }
+
+      await batch.commit();
+
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Agent request rejected.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not reject the request.\n$e',
+          ),
+        ),
+      );
+    }
+  }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
+
+  @override
+  Widget build(BuildContext context) {
+    final user =
+        FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      return const Scaffold(
+        body: Center(
+          child: Text(
+            'Please login to view agent requests.',
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Agent Requests',
+        ),
+      ),
+      backgroundColor:
+          const Color(0xFFFAFAFA),
+
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('ownerRequests')
+            .where(
+              'ownerUid',
+              isEqualTo: user.uid,
+            )
+            .snapshots(),
+
+        builder: (
+          context,
+          snapshot,
+        ) {
+          if (snapshot.connectionState ==
+              ConnectionState.waiting) {
+            return const Center(
+              child:
+                  CircularProgressIndicator(),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding:
+                    const EdgeInsets.all(20),
+                child: Text(
+                  'Could not load agent requests.\n\n'
+                  '${snapshot.error}',
+                  textAlign:
+                      TextAlign.center,
+                ),
+              ),
+            );
+          }
+
+          final documents =
+              snapshot.data?.docs ?? [];
+
+          if (documents.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding:
+                    EdgeInsets.all(30),
+                child: Text(
+                  'You do not have any agent requests yet.',
+                  textAlign:
+                      TextAlign.center,
+                  style: TextStyle(
+                    color:
+                        secondaryTextColor,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding:
+                const EdgeInsets.all(16),
+            itemCount:
+                documents.length,
+
+            itemBuilder: (
+              context,
+              index,
+            ) {
+              final document =
+                  documents[index];
+
+              final data =
+                  document.data()
+                      as Map<String, dynamic>;
+
+              final ownerName =
+                  data['ownerName']
+                          ?.toString() ??
+                      'Property owner';
+
+              final ownerPhone =
+                  data['ownerPhone']
+                          ?.toString() ??
+                      '';
+
+              final ownerEmail =
+                  data['ownerEmail']
+                          ?.toString() ??
+                      '';
+
+              final agentId =
+                  data['agentId']
+                          ?.toString() ??
+                      '';
+
+              final propertyId =
+                  data['propertyId']
+                          ?.toString() ??
+                      '';
+
+              // Normalize the status.
+              final status =
+                  (data['status']
+                              ?.toString() ??
+                          'pending')
+                      .trim()
+                      .toLowerCase();
+
+              final rejectionReason =
+                  data['rejectionReason']
+                          ?.toString() ??
+                      '';
+
+              // ==========================================================
+              // REQUEST CARD
+              // ==========================================================
+
+              return Card(
+                margin:
+                    const EdgeInsets.only(
+                  bottom: 18,
+                ),
+                shape:
+                    RoundedRectangleBorder(
+                  borderRadius:
+                      BorderRadius.circular(
+                    18,
+                  ),
+                ),
+
+                child: Padding(
+                  padding:
+                      const EdgeInsets.all(
+                    18,
+                  ),
+
+                  child: Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment
+                            .start,
+
+                    children: [
+                      // ==================================================
+                      // HEADER
+                      // ==================================================
+
+                      Row(
+                        children: [
+                          Container(
+                            width: 50,
+                            height: 50,
+                            decoration:
+                                BoxDecoration(
+                              color:
+                                  primaryOrange
+                                      .withValues(
+                                alpha: 0.10,
+                              ),
+                              borderRadius:
+                                  BorderRadius
+                                      .circular(
+                                14,
+                              ),
+                            ),
+                            child:
+                                const Icon(
+                              Icons
+                                  .handshake_outlined,
+                              color:
+                                  primaryOrange,
+                            ),
+                          ),
+
+                          const SizedBox(
+                            width: 12,
+                          ),
+
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment
+                                      .start,
+                              children: [
+                                const Text(
+                                  'Agent Request',
+                                  style:
+                                      TextStyle(
+                                    fontSize: 18,
+                                    fontWeight:
+                                        FontWeight
+                                            .bold,
+                                  ),
+                                ),
+
+                                const SizedBox(
+                                  height: 5,
+                                ),
+
+                                Text(
+                                  status
+                                      .toUpperCase(),
+                                  style:
+                                      TextStyle(
+                                    fontSize: 12,
+                                    fontWeight:
+                                        FontWeight
+                                            .bold,
+                                    color:
+                                        status ==
+                                                'approved'
+                                            ? Colors
+                                                .green
+                                            : status ==
+                                                    'rejected'
+                                                ? Colors
+                                                    .red
+                                                : Colors
+                                                    .orange,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(
+                        height: 20,
+                      ),
+
+                      // ==================================================
+                      // MESSAGE
+                      // ==================================================
+
+                      const Text(
+                        'An agent is requesting permission '
+                        'to manage this property on your behalf.',
+                        style: TextStyle(
+                          fontSize: 15,
+                        ),
+                      ),
+
+                      const SizedBox(
+                        height: 18,
+                      ),
+
+                      // ==================================================
+                      // PROPERTY
+                      // ==================================================
+
+                      Container(
+                        width:
+                            double.infinity,
+                        padding:
+                            const EdgeInsets
+                                .all(14),
+                        decoration:
+                            BoxDecoration(
+                          color:
+                              const Color(
+                            0xFFF5F5F5,
+                          ),
+                          borderRadius:
+                              BorderRadius
+                                  .circular(
+                            12,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment
+                                  .start,
+                          children: [
+                            const Text(
+                              'Property',
+                              style:
+                                  TextStyle(
+                                fontWeight:
+                                    FontWeight
+                                        .bold,
+                              ),
+                            ),
+
+                            const SizedBox(
+                              height: 8,
+                            ),
+
+                            Text(
+                              'Property ID: $propertyId',
+                              style:
+                                  const TextStyle(
+                                color:
+                                    secondaryTextColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(
+                        height: 16,
+                      ),
+
+                      // ==================================================
+                      // OWNER INFORMATION
+                      // ==================================================
+
+                      Text(
+                        'Owner: $ownerName',
+                        style:
+                            const TextStyle(
+                          color:
+                              secondaryTextColor,
+                        ),
+                      ),
+
+                      const SizedBox(
+                        height: 6,
+                      ),
+
+                      Text(
+                        'Phone: $ownerPhone',
+                        style:
+                            const TextStyle(
+                          color:
+                              secondaryTextColor,
+                        ),
+                      ),
+
+                      const SizedBox(
+                        height: 6,
+                      ),
+
+                      Text(
+                        'Email: $ownerEmail',
+                        style:
+                            const TextStyle(
+                          color:
+                              secondaryTextColor,
+                        ),
+                      ),
+
+                      const SizedBox(
+                        height: 6,
+                      ),
+
+                      Text(
+                        'Agent ID: $agentId',
+                        style:
+                            const TextStyle(
+                          color:
+                              secondaryTextColor,
+                          fontSize: 12,
+                        ),
+                      ),
+
+                      const SizedBox(
+                        height: 20,
+                      ),
+
+                      // ==================================================
+                      // STATUS
+                      // ==================================================
+
+                      Container(
+                        width:
+                            double.infinity,
+                        padding:
+                            const EdgeInsets
+                                .symmetric(
+                          vertical: 13,
+                          horizontal: 14,
+                        ),
+                        decoration:
+                            BoxDecoration(
+                          borderRadius:
+                              BorderRadius
+                                  .circular(
+                            12,
+                          ),
+                          border:
+                              Border.all(
+                            color:
+                                status ==
+                                        'approved'
+                                    ? Colors.green
+                                        .withValues(
+                                      alpha:
+                                          0.30,
+                                    )
+                                    : status ==
+                                            'rejected'
+                                        ? Colors.red
+                                            .withValues(
+                                          alpha:
+                                              0.30,
+                                        )
+                                        : Colors.orange
+                                            .withValues(
+                                          alpha:
+                                              0.30,
+                                        ),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              status ==
+                                      'approved'
+                                  ? Icons
+                                      .check_circle_outline
+                                  : status ==
+                                          'rejected'
+                                      ? Icons
+                                          .cancel_outlined
+                                      : Icons
+                                          .pending_outlined,
+                              size: 21,
+                              color:
+                                  status ==
+                                          'approved'
+                                      ? Colors
+                                          .green
+                                      : status ==
+                                              'rejected'
+                                          ? Colors
+                                              .red
+                                          : Colors
+                                              .orange,
+                            ),
+
+                            const SizedBox(
+                              width: 10,
+                            ),
+
+                            Expanded(
+                              child: Text(
+                                'Request status: '
+                                '${status.toUpperCase()}',
+                                style:
+                                    const TextStyle(
+                                  fontWeight:
+                                      FontWeight
+                                          .w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // ==================================================
+                      // REJECTION REASON
+                      // ==================================================
+
+                      if (status ==
+                              'rejected' &&
+                          rejectionReason
+                              .isNotEmpty) ...[
+                        const SizedBox(
+                          height: 12,
+                        ),
+
+                        Container(
+                          width:
+                              double.infinity,
+                          padding:
+                              const EdgeInsets
+                                  .all(14),
+                          decoration:
+                              BoxDecoration(
+                            color: Colors.red
+                                .withValues(
+                              alpha: 0.06,
+                            ),
+                            borderRadius:
+                                BorderRadius
+                                    .circular(
+                              12,
+                            ),
+                          ),
+                          child: Text(
+                            'Rejection reason:\n'
+                            '$rejectionReason',
+                            style:
+                                const TextStyle(
+                              color:
+                                  Colors.red,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+
+                      // ==================================================
+                      // ACTIONS
+                      // ==================================================
+
+                      if (status ==
+                          'pending') ...[
+                        const SizedBox(
+                          height: 22,
+                        ),
+
+                        const Divider(),
+
+                        const SizedBox(
+                          height: 14,
+                        ),
+
+                        const Text(
+                          'What would you like to do?',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight:
+                                FontWeight.w600,
+                          ),
+                        ),
+
+                        const SizedBox(
+                          height: 12,
+                        ),
+
+                        Row(
+                          children: [
+                            // ==========================================
+                            // REJECT
+                            // ==========================================
+
+                            Expanded(
+                              child:
+                                  OutlinedButton(
+                                onPressed: () {
+                                  _rejectRequest(
+                                    context,
+                                    document.id,
+                                    data,
+                                  );
+                                },
+                                style:
+                                    OutlinedButton
+                                        .styleFrom(
+                                  foregroundColor:
+                                      Colors.red,
+                                  side:
+                                      const BorderSide(
+                                    color:
+                                        Colors.red,
+                                    width: 1.2,
+                                  ),
+                                  padding:
+                                      const EdgeInsets
+                                          .symmetric(
+                                    vertical:
+                                        14,
+                                  ),
+                                ),
+                                child:
+                                    const Text(
+                                  'Reject',
+                                  style:
+                                      TextStyle(
+                                    fontWeight:
+                                        FontWeight
+                                            .bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(
+                              width: 12,
+                            ),
+
+                            // ==========================================
+                            // APPROVE
+                            // ==========================================
+
+                            Expanded(
+                              child:
+                                  ElevatedButton(
+                                onPressed: () {
+                                  _approveRequest(
+                                    context,
+                                    document.id,
+                                    data,
+                                  );
+                                },
+                                style:
+                                    ElevatedButton
+                                        .styleFrom(
+                                  backgroundColor:
+                                      primaryOrange,
+                                  foregroundColor:
+                                      Colors.white,
+                                  padding:
+                                      const EdgeInsets
+                                          .symmetric(
+                                    vertical:
+                                        14,
+                                  ),
+                                ),
+                                child:
+                                    const Text(
+                                  'Approve',
+                                  style:
+                                      TextStyle(
+                                    fontWeight:
+                                        FontWeight
+                                            .bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
