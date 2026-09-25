@@ -2361,6 +2361,7 @@ class ViewingRequests {
 class LandlordListing {
   final String id;
   final String ownerId;
+  final String managedById;
   final String title;
   final String location;
   final String propertyType;
@@ -2377,6 +2378,7 @@ class LandlordListing {
   LandlordListing({
     required this.id,
     required this.ownerId,
+    required this.managedById,
     required this.title,
     required this.location,
     required this.propertyType,
@@ -8565,6 +8567,7 @@ if (!kenyaPhoneRegex.hasMatch(ownerPhone)) {
   final listing = LandlordListing(
   id: listingId,
   ownerId: FirebaseAuth.instance.currentUser!.uid,
+  managedById: FirebaseAuth.instance.currentUser!.uid,
   title: titleController.text.trim(),
     location: '$selectedArea, $selectedCity',
     propertyType: selectedPropertyType,
@@ -8606,6 +8609,13 @@ if (!kenyaPhoneRegex.hasMatch(ownerPhone)) {
 'representationStatus': listingForOwner
     ? 'owner_contact_pending'
     : 'self_managed',
+
+// Owner approval status.
+// Agent listings for another owner will require
+// owner confirmation in the future.
+'ownerApprovalStatus': listingForOwner
+    ? 'pending'
+    : 'not_required',
 
 // Owner details for agent listings.
 'ownerName': listingForOwner
@@ -11596,11 +11606,13 @@ content: const Text(
               final data = document.data();
 
               final listing = LandlordListing(
-                id: data['id']?.toString() ?? document.id,
-                ownerId:
-                    data['ownerId']?.toString() ?? user.uid,
-                title: data['title']?.toString() ??
-                    'Untitled Property',
+  id: data['id']?.toString() ?? document.id,
+  ownerId:
+      data['ownerId']?.toString() ?? user.uid,
+  managedById:
+      data['managedById']?.toString() ?? user.uid,
+  title: data['title']?.toString() ??
+      'Untitled Property',
                 location:
                     data['location']?.toString() ?? '',
                 propertyType:
@@ -13473,17 +13485,20 @@ bool isAgent = false;
                       return;
                     }
 
-                    if (user.uid != listing.ownerId) {
-                      ScaffoldMessenger.of(context)
-                          .showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'You can only delete your own property listings.',
-                          ),
-                        ),
-                      );
-                      return;
-                    }
+                    final canDelete = user.uid == listing.ownerId ||
+    user.uid == listing.managedById;
+
+if (!canDelete) {
+  ScaffoldMessenger.of(context)
+      .showSnackBar(
+    const SnackBar(
+      content: Text(
+        'You do not have permission to delete this property.',
+      ),
+    ),
+  );
+  return;
+}
 
                     final confirmed =
                         await showDialog<bool>(
@@ -13620,6 +13635,7 @@ bool isAgent = false;
     );
   }
 }
+
 class EditPropertyScreen extends StatefulWidget {
   final LandlordListing listing;
 
@@ -13849,11 +13865,38 @@ class _EditPropertyScreenState
   }
 
   Future<void> saveChanges() async {
-    if (titleController.text.trim().isEmpty ||
-        selectedCounty == null ||
-        selectedCity == null ||
-        selectedArea == null ||
-        rentController.text.trim().isEmpty) {
+  final user = FirebaseAuth.instance.currentUser;
+
+  if (user == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Please login to edit this property.',
+        ),
+      ),
+    );
+    return;
+  }
+
+  final canEdit = user.uid == widget.listing.ownerId ||
+      user.uid == widget.listing.managedById;
+
+  if (!canEdit) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'You do not have permission to edit this property.',
+        ),
+      ),
+    );
+    return;
+  }
+
+  if (titleController.text.trim().isEmpty ||
+      selectedCounty == null ||
+      selectedCity == null ||
+      selectedArea == null ||
+      rentController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
