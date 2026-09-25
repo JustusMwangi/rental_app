@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "1003821037899",
+    "project_id": "rentalapp-kenya",
+    "storage_bucket": "rentalapp-kenya.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1003821037899:android:9968140c6eaff2ba6b10ce",
+        "android_client_info": {
+          "package_name": "com.example.rental_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1003821037899-s8obanblc95pinbrjjtu26mmt8j3lgpq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA4mvzoOn_kpvth7fStA0HonsUTw7UPRrM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1003821037899-s8obanblc95pinbrjjtu26mmt8j3lgpq.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
