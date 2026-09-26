@@ -11567,6 +11567,41 @@ class AgentOwnerRequestsScreen extends StatelessWidget {
 
               final propertyId =
                   data['propertyId']?.toString() ?? '';
+                // ============================================================
+                // REQUEST STATUS DISPLAY
+                // ============================================================
+
+                String statusText;
+                Color statusColor;
+                IconData statusIcon;
+
+                if (status == 'pending') {
+                  statusText = 'WAITING FOR OWNER';
+                  statusColor = Colors.orange;
+                  statusIcon = Icons.pending_outlined;
+                } else if (status == 'owner_approved') {
+                  statusText = 'PENDING RENTALAPP VERIFICATION';
+                  statusColor = Colors.blue;
+                  statusIcon =
+                      Icons.admin_panel_settings_outlined;
+                } else if (status == 'approved') {
+                  statusText = 'VERIFIED';
+                  statusColor = Colors.green;
+                  statusIcon = Icons.verified_outlined;
+                } else if (status == 'admin_rejected') {
+                  statusText = 'REJECTED BY RENTALAPP';
+                  statusColor = Colors.red;
+                  statusIcon = Icons.cancel_outlined;
+                } else if (status == 'rejected') {
+                  statusText = 'REJECTED BY OWNER';
+                  statusColor = Colors.red;
+                  statusIcon = Icons.cancel_outlined;
+                } else {
+                  statusText = status.toUpperCase();
+                  statusColor = secondaryTextColor;
+                  statusIcon = Icons.info_outline;
+                }
+
 
               return Card(
                 margin:
@@ -11599,15 +11634,6 @@ class AgentOwnerRequestsScreen extends StatelessWidget {
                               ),
                             ),
                           ),
-                          Text(
-                            status.toUpperCase(),
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight:
-                                  FontWeight.bold,
-                              color: secondaryTextColor,
-                            ),
-                          ),
                         ],
                       ),
 
@@ -11638,6 +11664,111 @@ class AgentOwnerRequestsScreen extends StatelessWidget {
                           fontSize: 12,
                         ),
                       ),
+                      // ============================================================
+// STATUS
+// ============================================================
+
+Container(
+  width: double.infinity,
+  padding: const EdgeInsets.symmetric(
+    vertical: 13,
+    horizontal: 14,
+  ),
+  decoration: BoxDecoration(
+    borderRadius: BorderRadius.circular(12),
+    border: Border.all(
+      color: status == 'approved'
+          ? Colors.green.withValues(alpha: 0.30)
+          : status == 'rejected' ||
+                  status == 'admin_rejected'
+              ? Colors.red.withValues(alpha: 0.30)
+              : status == 'owner_approved'
+                  ? Colors.blue.withValues(alpha: 0.30)
+                  : Colors.orange.withValues(alpha: 0.30),
+    ),
+  ),
+  child: Row(
+    children: [
+      Icon(
+        status == 'approved'
+            ? Icons.check_circle_outline
+            : status == 'rejected' ||
+                    status == 'admin_rejected'
+                ? Icons.cancel_outlined
+                : status == 'owner_approved'
+                    ? Icons.admin_panel_settings_outlined
+                    : Icons.pending_outlined,
+        size: 21,
+        color: status == 'approved'
+            ? Colors.green
+            : status == 'rejected' ||
+                    status == 'admin_rejected'
+                ? Colors.red
+                : status == 'owner_approved'
+                    ? Colors.blue
+                    : Colors.orange,
+      ),
+
+      const SizedBox(width: 10),
+
+      Expanded(
+        child: Text(
+          status == 'approved'
+              ? 'VERIFIED'
+              : status == 'rejected'
+                  ? 'REJECTED BY OWNER'
+                  : status == 'admin_rejected'
+                      ? 'REJECTED BY RENTALAPP'
+                      : status == 'owner_approved'
+                          ? 'PENDING RENTALAPP VERIFICATION'
+                          : 'WAITING FOR OWNER',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: status == 'approved'
+                ? Colors.green
+                : status == 'rejected' ||
+                        status == 'admin_rejected'
+                    ? Colors.red
+                    : status == 'owner_approved'
+                        ? Colors.blue
+                        : Colors.orange,
+          ),
+        ),
+      ),
+    ],
+  ),
+),
+                      // ============================================================
+// REJECTION REASON
+// ============================================================
+
+if (status == 'rejected' ||
+    status == 'admin_rejected') ...[
+  const SizedBox(height: 12),
+
+  Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Colors.red.withValues(alpha: 0.06),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(
+        color: Colors.red.withValues(alpha: 0.20),
+      ),
+    ),
+    child: Text(
+      status == 'admin_rejected'
+          ? 'RentalApp rejection reason: '
+              '${data['adminRejectionReason']?.toString() ?? 'No reason provided.'}'
+          : 'Owner rejection reason: '
+              '${data['rejectionReason']?.toString() ?? 'No reason provided.'}',
+      style: const TextStyle(
+        color: Colors.red,
+        fontSize: 13,
+      ),
+    ),
+  ),
+],
                     ],
                   ),
                 ),
@@ -12485,97 +12616,80 @@ Future<void> _approveRequest(
                         height: 20,
                       ),
 
-                      // ==================================================
-                      // STATUS
-                      // ==================================================
+                          // ============================================================
+// STATUS
+// ============================================================
 
-                      Container(
-                        width:
-                            double.infinity,
-                        padding:
-                            const EdgeInsets
-                                .symmetric(
-                          vertical: 13,
-                          horizontal: 14,
-                        ),
-                        decoration:
-                            BoxDecoration(
-                          borderRadius:
-                              BorderRadius
-                                  .circular(
-                            12,
-                          ),
-                          border:
-                              Border.all(
-                            color:
-                                status ==
-                                        'approved'
-                                    ? Colors.green
-                                        .withValues(
-                                      alpha:
-                                          0.30,
-                                    )
-                                    : status ==
-                                            'rejected'
-                                        ? Colors.red
-                                            .withValues(
-                                          alpha:
-                                              0.30,
-                                        )
-                                        : Colors.orange
-                                            .withValues(
-                                          alpha:
-                                              0.30,
-                                        ),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              status ==
-                                      'approved'
-                                  ? Icons
-                                      .check_circle_outline
-                                  : status ==
-                                          'rejected'
-                                      ? Icons
-                                          .cancel_outlined
-                                      : Icons
-                                          .pending_outlined,
-                              size: 21,
-                              color:
-                                  status ==
-                                          'approved'
-                                      ? Colors
-                                          .green
-                                      : status ==
-                                              'rejected'
-                                          ? Colors
-                                              .red
-                                          : Colors
-                                              .orange,
-                            ),
+Container(
+  width: double.infinity,
+  padding: const EdgeInsets.symmetric(
+    vertical: 13,
+    horizontal: 14,
+  ),
+  decoration: BoxDecoration(
+    borderRadius: BorderRadius.circular(12),
+    border: Border.all(
+      color: status == 'approved'
+          ? Colors.green.withValues(alpha: 0.30)
+          : status == 'rejected' ||
+                  status == 'admin_rejected'
+              ? Colors.red.withValues(alpha: 0.30)
+              : status == 'owner_approved'
+                  ? Colors.blue.withValues(alpha: 0.30)
+                  : Colors.orange.withValues(alpha: 0.30),
+    ),
+  ),
+  child: Row(
+    children: [
+      Icon(
+        status == 'approved'
+            ? Icons.check_circle_outline
+            : status == 'rejected' ||
+                    status == 'admin_rejected'
+                ? Icons.cancel_outlined
+                : status == 'owner_approved'
+                    ? Icons.admin_panel_settings_outlined
+                    : Icons.pending_outlined,
+        size: 21,
+        color: status == 'approved'
+            ? Colors.green
+            : status == 'rejected' ||
+                    status == 'admin_rejected'
+                ? Colors.red
+                : status == 'owner_approved'
+                    ? Colors.blue
+                    : Colors.orange,
+      ),
 
-                            const SizedBox(
-                              width: 10,
-                            ),
+      const SizedBox(width: 10),
 
-                            Expanded(
-                              child: Text(
-                                'Request status: '
-                                '${status.toUpperCase()}',
-                                style:
-                                    const TextStyle(
-                                  fontWeight:
-                                      FontWeight
-                                          .w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
+      Expanded(
+        child: Text(
+          status == 'approved'
+              ? 'VERIFIED'
+              : status == 'rejected'
+                  ? 'REJECTED BY OWNER'
+                  : status == 'admin_rejected'
+                      ? 'REJECTED BY RENTALAPP'
+                      : status == 'owner_approved'
+                          ? 'PENDING RENTALAPP VERIFICATION'
+                          : 'WAITING FOR OWNER',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: status == 'approved'
+                ? Colors.green
+                : status == 'rejected' ||
+                        status == 'admin_rejected'
+                    ? Colors.red
+                    : status == 'owner_approved'
+                        ? Colors.blue
+                        : Colors.orange,
+          ),
+        ),
+      ),
+    ],
+  ),
+),
                       // ==================================================
                       // REJECTION REASON
                       // ==================================================
@@ -12874,18 +12988,36 @@ class AdminAgentVerificationScreen
           .doc(propertyId);
 
       // ============================================================
-      // UPDATE REQUEST
+      // UPDATE OWNER REQUEST
       // ============================================================
 
       batch.update(
         requestRef,
         {
           'status': 'approved',
+
+          'ownerApprovalStatus':
+              'approved',
+
           'adminApprovalStatus':
               'approved',
+
+          'ownerApprovalStatus':
+              'approved',
+
           'adminApprovedAt':
               FieldValue.serverTimestamp(),
+
           'adminRejectionReason':
+              FieldValue.delete(),
+
+          'rejectionReason':
+              FieldValue.delete(),
+
+          'adminRejectedAt':
+              FieldValue.delete(),
+
+          'rejectedAt':
               FieldValue.delete(),
         },
       );
@@ -12897,25 +13029,44 @@ class AdminAgentVerificationScreen
       batch.update(
         propertyRef,
         {
+          // Confirmed property owner.
           'ownerId': ownerUid,
           'ownerType': 'landlord',
 
+          // Confirmed managing agent.
           'managedById': agentId,
           'managedByType': 'agent',
 
+          // Owner approval.
           'ownerApprovalStatus':
               'approved',
 
+          // Admin approval.
           'adminApprovalStatus':
               'approved',
 
+          // Final representation status.
           'representationStatus':
               'approved',
+
+          // FINAL PROPERTY STATUS.
+          'status': 'approved',
+          'verified': true,
 
           'adminApprovedAt':
               FieldValue.serverTimestamp(),
 
+          // Remove old rejection information.
           'adminRejectionReason':
+              FieldValue.delete(),
+
+          'rejectionReason':
+              FieldValue.delete(),
+
+          'adminRejectedAt':
+              FieldValue.delete(),
+
+          'rejectedAt':
               FieldValue.delete(),
         },
       );
@@ -12923,6 +13074,10 @@ class AdminAgentVerificationScreen
       await batch.commit();
 
       if (!context.mounted) return;
+
+      // ============================================================
+      // SUCCESS MESSAGE
+      // ============================================================
 
       await showDialog<void>(
         context: context,
@@ -12950,8 +13105,9 @@ class AdminAgentVerificationScreen
               ],
             ),
             content: const Text(
-              'The agent representation has been verified successfully. '
-              'The agent is now authorized to manage this property.',
+              'The agent representation has been verified successfully.\n\n'
+              'The property is now approved and the agent is authorized '
+              'to manage this property.',
             ),
             actions: [
               ElevatedButton(
@@ -13009,6 +13165,10 @@ class AdminAgentVerificationScreen
     ];
 
     String? selectedReason;
+
+    // ============================================================
+    // SELECT REJECTION REASON
+    // ============================================================
 
     final reason = await showDialog<String>(
       context: context,
@@ -13142,18 +13302,32 @@ class AdminAgentVerificationScreen
           .collection('ownerRequests')
           .doc(requestId);
 
+      // ============================================================
+      // UPDATE OWNER REQUEST
+      // ============================================================
+
       batch.update(
         requestRef,
         {
           'status': 'admin_rejected',
+
           'adminApprovalStatus':
               'rejected',
+
           'adminRejectedAt':
               FieldValue.serverTimestamp(),
+
           'adminRejectionReason':
               reason,
+
+          'adminApprovedAt':
+              FieldValue.delete(),
         },
       );
+
+      // ============================================================
+      // UPDATE PROPERTY
+      // ============================================================
 
       if (propertyId.isNotEmpty) {
         final propertyRef = firestore
@@ -13163,14 +13337,28 @@ class AdminAgentVerificationScreen
         batch.update(
           propertyRef,
           {
+            // Admin rejected the representation.
             'adminApprovalStatus':
                 'rejected',
+
             'representationStatus':
                 'rejected',
+
+            // FINAL PROPERTY STATUS.
+            'status':
+                'admin_rejected',
+
+            'verified':
+                false,
+
             'adminRejectionReason':
                 reason,
+
             'adminRejectedAt':
                 FieldValue.serverTimestamp(),
+
+            'adminApprovedAt':
+                FieldValue.delete(),
           },
         );
       }
@@ -13179,12 +13367,59 @@ class AdminAgentVerificationScreen
 
       if (!context.mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Representation verification rejected.',
-          ),
-        ),
+      // ============================================================
+      // REJECTION MESSAGE
+      // ============================================================
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(
+              borderRadius:
+                  BorderRadius.circular(
+                18,
+              ),
+            ),
+            title: const Row(
+              children: [
+                Icon(
+                  Icons.cancel_outlined,
+                  color: Colors.red,
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Verification Rejected',
+                  ),
+                ),
+              ],
+            ),
+            content: Text(
+              'The agent representation has been rejected.\n\n'
+              'Reason:\n$reason',
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(
+                    dialogContext,
+                  );
+                },
+                style:
+                    ElevatedButton.styleFrom(
+                  backgroundColor:
+                      primaryOrange,
+                  foregroundColor:
+                      Colors.white,
+                ),
+                child:
+                    const Text('Done'),
+              ),
+            ],
+          );
+        },
       );
     } catch (e) {
       if (!context.mounted) return;
@@ -14205,20 +14440,32 @@ content: const Text(
                 ),
               );
 
-              final status =
-                  data['status']?.toString() ?? 'pending';
+                          final status =
+                data['status']?.toString() ?? 'pending';
+                debugPrint(
+  'MY LISTING DEBUG: '
+  'property=${listing.id}, '
+  'status=$status, '
+  'ownerId=${data['ownerId']}, '
+  'managedById=${data['managedById']}, '
+  'currentUser=${user.uid}',
+);
 
-              final rejectionReason =
-                  data['rejectionReason']
-                          ?.toString() ??
-                      '';
+            final rejectionReason =
+                status == 'admin_rejected'
+                    ? data['adminRejectionReason']
+                            ?.toString() ??
+                        ''
+                    : data['rejectionReason']
+                            ?.toString() ??
+                        '';
 
-              return _listingCard(
-                context,
-                listing,
-                status,
-                rejectionReason,
-              );
+            return _listingCard(
+              context,
+              listing,
+              status,
+              rejectionReason,
+            );
             },
           );
         },
@@ -14384,22 +14631,31 @@ content: const Text(
     IconData statusIcon;
 
     if (status == 'approved') {
-      statusColor = availableGreen;
-      statusBackground = Colors.green.shade50;
-      statusText = 'Approved';
-      statusIcon = Icons.check_circle_outline;
-    } else if (status == 'rejected') {
-      statusColor = Colors.red.shade700;
-      statusBackground = Colors.red.shade50;
-      statusText = 'Rejected';
-      statusIcon = Icons.cancel_outlined;
-    } else {
-      statusColor = primaryOrange;
-      statusBackground = Colors.orange.shade50;
-      statusText = 'Pending verification';
-      statusIcon = Icons.hourglass_empty;
-    }
-
+  statusColor = availableGreen;
+  statusBackground = Colors.green.shade50;
+  statusText = 'Approved';
+  statusIcon = Icons.check_circle_outline;
+} else if (status == 'admin_rejected') {
+  statusColor = Colors.red.shade700;
+  statusBackground = Colors.red.shade50;
+  statusText = 'Rejected by RentalApp';
+  statusIcon = Icons.cancel_outlined;
+} else if (status == 'rejected') {
+  statusColor = Colors.red.shade700;
+  statusBackground = Colors.red.shade50;
+  statusText = 'Rejected by Owner';
+  statusIcon = Icons.cancel_outlined;
+} else if (status == 'owner_approved') {
+  statusColor = Colors.blue.shade700;
+  statusBackground = Colors.blue.shade50;
+  statusText = 'Pending RentalApp Verification';
+  statusIcon = Icons.admin_panel_settings_outlined;
+} else {
+  statusColor = primaryOrange;
+  statusBackground = Colors.orange.shade50;
+  statusText = 'Waiting for Owner';
+  statusIcon = Icons.hourglass_empty;
+}
     final availabilityColor =
         _availabilityColor(listing.availability);
 
@@ -14706,8 +14962,9 @@ Text(
                         ),
                     ],
                   ),
-                  if (status == 'rejected' &&
-                      rejectionReason.trim().isNotEmpty)
+                              if ((status == 'rejected' ||
+                    status == 'admin_rejected') &&
+                rejectionReason.trim().isNotEmpty)
                     Container(
                       width: double.infinity,
                       margin:
