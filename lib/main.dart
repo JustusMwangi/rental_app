@@ -10,6 +10,7 @@ import 'data/kenya_locations.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -2188,8 +2189,14 @@ const Color availableGreen = Color(0xFF2E7D32);
 
 class RentalProperty {
   final String id;
-  final String title;
-  final String location;
+final String ownerId;
+final String managedById;
+final String managedByType;
+final String ownerName;
+final String ownerPhone;
+final String ownerEmail;
+final String title;
+final String location;
   final String propertyType;
   final int rent;
   final int bedrooms;
@@ -2201,9 +2208,15 @@ class RentalProperty {
   final List<String> photoPaths;
 
   const RentalProperty({
-    required this.id,
-    required this.title,
-    required this.location,
+  required this.id,
+  required this.ownerId,
+required this.managedById,
+required this.managedByType,
+required this.ownerName,
+required this.ownerPhone,
+required this.ownerEmail,
+required this.title,
+  required this.location,
     required this.propertyType,
     required this.rent,
     required this.bedrooms,
@@ -2222,6 +2235,12 @@ class RentalProperty {
 const List<RentalProperty> rentalProperties = [
   RentalProperty(
     id: 'property_1',
+        ownerId: '',
+    managedById: '',
+    managedByType: '',
+    ownerName: '',
+    ownerPhone: '',
+    ownerEmail: '',
     title: 'Modern Bedsitter',
     location: 'Kileleshwa, Nairobi',
     propertyType: 'Bedsitter / Studio',
@@ -2242,6 +2261,12 @@ const List<RentalProperty> rentalProperties = [
   ),
   RentalProperty(
     id: 'property_2',
+    ownerId: '',
+    managedById: '',
+    managedByType: '',
+    ownerName: '',
+    ownerPhone: '',
+    ownerEmail: '',
     title: 'Executive 1 Bedroom Apartment',
     location: 'Kilimani, Nairobi',
     propertyType: 'Apartment',
@@ -2262,6 +2287,12 @@ const List<RentalProperty> rentalProperties = [
   ),
   RentalProperty(
     id: 'property_3',
+    ownerId: '',
+    managedById: '',
+    managedByType: '',
+    ownerName: '',
+    ownerPhone: '',
+    ownerEmail: '',
     title: 'Modern 2 Bedroom Apartment',
     location: 'Kileleshwa, Nairobi',
     propertyType: 'Apartment',
@@ -2282,6 +2313,12 @@ const List<RentalProperty> rentalProperties = [
   ),
   RentalProperty(
     id: 'property_4',
+    ownerId: '',
+    managedById: '',
+    managedByType: '',
+    ownerName: '',
+    ownerPhone: '',
+    ownerEmail: '',
     title: 'Spacious 3 Bedroom Home',
     location: 'Lavington, Nairobi',
     propertyType: 'Standalone House',
@@ -2302,6 +2339,12 @@ const List<RentalProperty> rentalProperties = [
   ),
   RentalProperty(
     id: 'property_5',
+    ownerId: '',
+    managedById: '',
+    managedByType: '',
+    ownerName: '',
+    ownerPhone: '',
+    ownerEmail: '',
     title: 'Affordable 1 Bedroom',
     location: 'Nairobi West, Nairobi',
     propertyType: 'Apartment',
@@ -2321,6 +2364,12 @@ const List<RentalProperty> rentalProperties = [
   ),
   RentalProperty(
     id: 'property_6',
+    ownerId: '',
+    managedById: '',
+    managedByType: '',
+    ownerName: '',
+    ownerPhone: '',
+    ownerEmail: '',
     title: 'Premium 3 Bedroom Apartment',
     location: 'Kilimani, Nairobi',
     propertyType: 'Apartment',
@@ -2482,8 +2531,14 @@ RentalProperty rentalPropertyFromFirestore(
   Map<String, dynamic> data,
 ) {
   return RentalProperty(
-    id: data['id']?.toString() ?? '',
-    title: data['title']?.toString() ?? 'Untitled Property',
+  id: data['id']?.toString() ?? '',
+  ownerId: data['ownerId']?.toString() ?? '',
+  managedById: data['managedById']?.toString() ?? '',
+  managedByType: data['managedByType']?.toString() ?? '',
+  ownerName: data['ownerName']?.toString() ?? '',
+  ownerPhone: data['ownerPhone']?.toString() ?? '',
+  ownerEmail: data['ownerEmail']?.toString() ?? '',
+  title: data['title']?.toString() ?? 'Untitled Property',
     location: data['location']?.toString() ?? '',
     propertyType:
         data['propertyType']?.toString() ?? 'Apartment',
@@ -4509,25 +4564,41 @@ class PropertyDetailsScreen extends StatelessWidget {
   }
 
   Future<void> _requestViewing(BuildContext context) async {
-    final user = FirebaseAuth.instance.currentUser;
+  final user = FirebaseAuth.instance.currentUser;
 
-    // Not logged in.
-    if (user == null) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const AuthScreen(),
-        ),
-      );
-      return;
-    }
+  // ------------------------------------------------------------
+  // NOT LOGGED IN
+  // ------------------------------------------------------------
 
+  if (user == null) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const AuthScreen(),
+      ),
+    );
+    return;
+  }
+
+  try {
     final role = await _getUserRole();
 
     if (!context.mounted) return;
 
-    // Only tenants can request viewings.
+    // ----------------------------------------------------------
+    // ONLY TENANTS CAN REQUEST VIEWINGS
+    // ----------------------------------------------------------
+
     if (role != 'tenant') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            role == null
+                ? 'Please complete your account setup first.'
+                : 'Only tenant accounts can request property viewings.',
+          ),
+        ),
+      );
       return;
     }
 
@@ -4539,28 +4610,55 @@ class PropertyDetailsScreen extends StatelessWidget {
         ),
       ),
     );
+  } catch (e) {
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Unable to check your account. Please try again.',
+        ),
+      ),
+    );
   }
+}
 
   Future<void> _contactManager(BuildContext context) async {
-    final user = FirebaseAuth.instance.currentUser;
+  final user = FirebaseAuth.instance.currentUser;
 
-    // Not logged in.
-    if (user == null) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const AuthScreen(),
-        ),
-      );
-      return;
-    }
+  // ------------------------------------------------------------
+  // NOT LOGGED IN
+  // ------------------------------------------------------------
 
+  if (user == null) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const AuthScreen(),
+      ),
+    );
+    return;
+  }
+
+  try {
     final role = await _getUserRole();
 
     if (!context.mounted) return;
 
-    // Only tenants can contact the manager.
+    // ----------------------------------------------------------
+    // ONLY TENANTS CAN CONTACT PROPERTY MANAGER
+    // ----------------------------------------------------------
+
     if (role != 'tenant') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            role == null
+                ? 'Please complete your account setup first.'
+                : 'Only tenant accounts can contact the property manager.',
+          ),
+        ),
+      );
       return;
     }
 
@@ -4572,7 +4670,18 @@ class PropertyDetailsScreen extends StatelessWidget {
         ),
       ),
     );
+  } catch (e) {
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Unable to check your account. Please try again.',
+        ),
+      ),
+    );
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -5800,26 +5909,46 @@ class ContactManagerScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          const CircleAvatar(
+          // ----------------------------------------------------
+          // MANAGER ICON
+          // ----------------------------------------------------
+
+          CircleAvatar(
             radius: 42,
             backgroundColor: primaryOrange,
-            child: Icon(
+            child: const Icon(
               Icons.person,
               size: 45,
               color: Colors.white,
             ),
           ),
+
           const SizedBox(height: 15),
-          const Center(
+
+          // ----------------------------------------------------
+          // MANAGER NAME
+          // ----------------------------------------------------
+
+          Center(
             child: Text(
-              'Property Manager',
-              style: TextStyle(
+              property.ownerName.trim().isNotEmpty
+                  ? property.ownerName
+                  : property.managedByType == 'agent'
+                      ? 'Property Agent'
+                      : 'Property Owner',
+              style: const TextStyle(
                 fontSize: 21,
                 fontWeight: FontWeight.bold,
               ),
             ),
           ),
+
           const SizedBox(height: 5),
+
+          // ----------------------------------------------------
+          // PROPERTY TITLE
+          // ----------------------------------------------------
+
           Center(
             child: Text(
               property.title,
@@ -5828,46 +5957,90 @@ class ContactManagerScreen extends StatelessWidget {
               ),
             ),
           ),
+
           const SizedBox(height: 25),
+
+          // ----------------------------------------------------
+          // MESSAGE BOX
+          // ----------------------------------------------------
+
           TextField(
             maxLines: 5,
             decoration: InputDecoration(
               hintText:
                   'Write a message to the property manager...',
               border: OutlineInputBorder(
-                borderRadius:
-                    BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(14),
               ),
             ),
           ),
+
           const SizedBox(height: 15),
+
+          // ----------------------------------------------------
+          // CALL PROPERTY MANAGER
+          // ----------------------------------------------------
+
           _contactButton(
             context,
             Icons.phone,
             'Call Property Manager',
-            'Phone contact will be connected next.',
+            property.ownerPhone.trim().isEmpty
+                ? 'Phone number is not available.'
+                : property.ownerPhone,
+            isCallButton: true,
           ),
+
           const SizedBox(height: 10),
+
+          // ----------------------------------------------------
+          // WHATSAPP
+          // ----------------------------------------------------
+
           _contactButton(
             context,
             Icons.chat,
             'Message on WhatsApp',
-            'WhatsApp contact will be connected next.',
+            property.ownerPhone.trim().isEmpty
+                ? 'Phone number is not available.'
+                : property.ownerPhone,
+            customIcon: Image.asset(
+              'assets/icons/whatsapp.png',
+              width: 24,
+              height: 24,
+            ),
+            isWhatsAppButton: true,
+            propertyTitle: property.title,
           ),
+
           const SizedBox(height: 10),
-          _contactButton(
+
+          // ----------------------------------------------------
+          // EMAIL
+          // ----------------------------------------------------
+
+                    _contactButton(
             context,
             Icons.email_outlined,
             'Send Email',
-            'Email contact will be connected next.',
+            property.ownerEmail.trim().isEmpty
+                ? 'Email address is not available.'
+                : property.ownerEmail,
+            isEmailButton: true,
+            propertyTitle: property.title,
           ),
+
           const SizedBox(height: 25),
+
+          // ----------------------------------------------------
+          // SAFETY NOTICE
+          // ----------------------------------------------------
+
           Container(
             padding: const EdgeInsets.all(15),
             decoration: BoxDecoration(
               color: Colors.orange.shade50,
-              borderRadius:
-                  BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(14),
             ),
             child: const Row(
               crossAxisAlignment:
@@ -5891,32 +6064,568 @@ class ContactManagerScreen extends StatelessWidget {
     );
   }
 
+  // ============================================================
+  // CONTACT BUTTON
+  // ============================================================
+
   Widget _contactButton(
     BuildContext context,
     IconData icon,
     String title,
-    String message,
-  ) {
+    String message, {
+    bool isCallButton = false,
+    bool isWhatsAppButton = false,
+    bool isEmailButton = false,
+    Widget? customIcon,
+    String propertyTitle = '',
+  }) {
     return SizedBox(
       width: double.infinity,
       child: OutlinedButton.icon(
         onPressed: () {
-          showMessage(context, message);
+          if (isCallButton) {
+  _showCallDialog(
+    context,
+    message,
+  );
+} else if (isWhatsAppButton) {
+  _openWhatsApp(
+    context,
+    message,
+    propertyTitle,
+  );
+
+} else if (isEmailButton) {
+  _openEmail(
+    context,
+    message,
+    propertyTitle,
+  );
+} else {
+  showMessage(
+    context,
+    message,
+  );
+}
         },
-        icon: Icon(icon),
+        icon: customIcon ?? Icon(icon),
         label: Text(title),
         style: OutlinedButton.styleFrom(
           foregroundColor: primaryOrange,
-          padding:
-              const EdgeInsets.symmetric(
+          padding: const EdgeInsets.symmetric(
             vertical: 15,
           ),
         ),
       ),
     );
   }
+  // ============================================================
+// OPEN EMAIL
+// ============================================================
+
+Future<void> _openEmail(
+  BuildContext context,
+  String email,
+  String propertyTitle,
+) async {
+  final address = email.trim();
+
+  if (address.isEmpty ||
+      address == 'Email contact will be connected next.') {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Row(
+            children: [
+              Icon(
+                Icons.email_outlined,
+                color: primaryOrange,
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Email Contact',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            'The property manager has not provided an email address.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return;
+  }
+
+  final subject = Uri.encodeComponent(
+    'RentalApp Property Viewing - $propertyTitle',
+  );
+
+  final body = Uri.encodeComponent(
+    'Hello, I am interested in viewing '
+    '$propertyTitle on RentalApp. '
+    'Please let me know when I can arrange a viewing.',
+  );
+
+  final uri = Uri.parse(
+    'mailto:$address?subject=$subject&body=$body',
+  );
+
+  try {
+    await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+  } catch (e) {
+    if (context.mounted) {
+      showMessage(
+        context,
+        'Unable to open the email application.',
+      );
+    }
+  }
 }
 
+  // ============================================================
+  // OPEN WHATSAPP
+  // ============================================================
+
+  Future<void> _openWhatsApp(
+    BuildContext context,
+    String phoneNumber,
+    String propertyTitle,
+  ) async {
+    final rawNumber = phoneNumber.trim();
+
+    // ----------------------------------------------------------
+    // PHONE NUMBER NOT AVAILABLE
+    // ----------------------------------------------------------
+
+    if (rawNumber.isEmpty ||
+        rawNumber == 'Phone number is not available.') {
+      showDialog(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: const Row(
+              children: [
+                Icon(
+                  Icons.chat_outlined,
+                  color: primaryOrange,
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'WhatsApp Contact',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            content: const Text(
+              'The property manager has not provided a WhatsApp phone number.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      );
+
+      return;
+    }
+
+    // ----------------------------------------------------------
+    // CLEAN PHONE NUMBER
+    // ----------------------------------------------------------
+
+    String number = rawNumber.replaceAll(
+      RegExp(r'[^0-9+]'),
+      '',
+    );
+
+    if (number.startsWith('+')) {
+      number = number.substring(1);
+    }
+
+    if (number.startsWith('0')) {
+      number = '254${number.substring(1)}';
+    }
+
+    if (!number.startsWith('254')) {
+      showMessage(
+        context,
+        'Please check the property manager phone number.',
+      );
+      return;
+    }
+
+    // ----------------------------------------------------------
+    // WHATSAPP MESSAGE
+    // ----------------------------------------------------------
+
+    final message =
+        'Hello, I am interested in viewing '
+        '$propertyTitle on RentalApp. '
+        'Please let me know when I can arrange a viewing.';
+
+    final encodedMessage =
+        Uri.encodeComponent(message);
+
+    final uri = Uri.parse(
+      'https://wa.me/$number?text=$encodedMessage',
+    );
+
+    try {
+      await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        showMessage(
+          context,
+          'Unable to open WhatsApp.',
+        );
+      }
+    }
+  }
+}
+void _showCallDialog(
+  BuildContext context,
+  String phoneNumber,
+) {
+  final number = phoneNumber.trim();
+
+  if (number.isEmpty ||
+      number == 'Phone number is not available.') {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'Phone Number',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: const Text(
+            'The property manager has not provided a phone number.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+              },
+              child: const Text(
+                'Close',
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    return;
+  }
+
+  showDialog(
+    context: context,
+    barrierDismissible: true,
+    builder: (dialogContext) {
+      return Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            24,
+            28,
+            24,
+            20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 76,
+                height: 76,
+                decoration: BoxDecoration(
+                  color: primaryOrange.withValues(
+                    alpha: 0.12,
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.phone,
+                  size: 38,
+                  color: primaryOrange,
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Property Manager',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Call this number?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: secondaryTextColor,
+                ),
+              ),
+              const SizedBox(height: 18),
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () async {
+                final uri = Uri.parse(
+                  'tel:${number.trim()}',
+                );
+
+                try {
+                  await launchUrl(
+                    uri,
+                    mode: LaunchMode.externalApplication,
+                  );
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Unable to open the phone dialer.',
+                      ),
+                    ),
+                  );
+                  }
+                }
+              },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 15,
+                    horizontal: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.phone_outlined,
+                        color: primaryOrange,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          number,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: primaryOrange,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                      final uri = Uri.parse(
+                        'tel:${number.trim()}',
+                      );
+
+                      try {
+                        await launchUrl(
+                          uri,
+                          mode: LaunchMode.externalApplication,
+                        );
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Unable to open the phone dialer.',
+                              ),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                  icon: const Icon(
+                    Icons.call,
+                  ),
+                  label: const Text(
+                    'Call Now',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryOrange,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 15,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius:
+                          BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text(
+                  'Close',
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+  // ============================================================
+// OPEN EMAIL
+// ============================================================
+
+Future<void> _openEmail(
+  BuildContext context,
+  String emailAddress,
+  String propertyTitle,
+) async {
+  final email = emailAddress.trim();
+
+  // ----------------------------------------------------------
+  // EMAIL NOT AVAILABLE
+  // ----------------------------------------------------------
+
+  if (email.isEmpty ||
+      email == 'Email contact will be connected next.') {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Row(
+            children: [
+              Icon(
+                Icons.email_outlined,
+                color: primaryOrange,
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Email Contact',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            'The property manager has not provided an email address.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return;
+  }
+
+  // ----------------------------------------------------------
+  // EMAIL MESSAGE
+  // ----------------------------------------------------------
+
+  final subject =
+      'RentalApp Property Enquiry - $propertyTitle';
+
+  final body =
+      'Hello,\n\n'
+      'I am interested in viewing '
+      '$propertyTitle on RentalApp.\n\n'
+      'Please let me know when I can arrange a viewing.\n\n'
+      'Thank you.';
+
+  final uri = Uri(
+    scheme: 'mailto',
+    path: email,
+    queryParameters: {
+      'subject': subject,
+      'body': body,
+    },
+  );
+
+  try {
+    await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+  const SnackBar(
+    content: Text(
+      'Unable to open email.',
+    ),
+  ),
+);
+    }
+  }
+}
+}
 // ============================================================
 // VIEWING REQUEST
 // ============================================================
@@ -6011,7 +6720,107 @@ if (user == null) {
     );
     return;
   }
+// ============================================================
+// CHECK IF THE REQUESTED DATE AND TIME IS ALREADY BOOKED
+// ============================================================
 
+// We only query by propertyId.
+// Date, time and status are checked locally so we do not
+// require a Firestore composite index.
+
+final existingRequests = await FirebaseFirestore.instance
+    .collection('viewing_requests')
+    .where(
+      'propertyId',
+      isEqualTo: widget.property.id,
+    )
+    .get();
+
+final requestedDate = selectedDate!;
+
+bool timeAlreadyRequested = false;
+
+for (final document in existingRequests.docs) {
+  final data = document.data();
+
+  final status =
+      data['status']?.toString().trim().toLowerCase();
+
+  if (status != 'pending' &&
+      status != 'approved') {
+    continue;
+  }
+
+  final dateValue = data['date'];
+
+  if (dateValue is! Timestamp) {
+    continue;
+  }
+
+  final existingDate = dateValue.toDate();
+
+  final sameDate =
+      existingDate.year == requestedDate.year &&
+      existingDate.month == requestedDate.month &&
+      existingDate.day == requestedDate.day;
+
+  final existingTime =
+      data['time']?.toString() ?? '';
+
+  if (sameDate &&
+      existingTime == selectedTime) {
+    timeAlreadyRequested = true;
+    break;
+  }
+}
+
+if (timeAlreadyRequested) {
+  if (!mounted) return;
+
+  showDialog(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        icon: const Icon(
+          Icons.event_busy_outlined,
+          color: Colors.orange,
+          size: 45,
+        ),
+        title: const Text(
+          'Viewing Time Unavailable',
+          textAlign: TextAlign.center,
+        ),
+        content: const Text(
+          'The property manager is not available at the selected date and time. '
+          'Please choose another date or time for your viewing request.',
+          textAlign: TextAlign.center,
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryOrange,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text(
+                'Choose Another Time',
+              ),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+
+  return;
+}
   final request = ViewingRequest(
     property: widget.property,
     name: nameController.text.trim(),
@@ -6026,35 +6835,79 @@ if (user == null) {
         DateTime.now().millisecondsSinceEpoch.toString();
 
     await FirebaseFirestore.instance
-        .collection('viewing_requests')
-        .doc(requestId)
-        .set({
-      'id': requestId,
-      'tenantId': user.uid,
-      'propertyId': widget.property.id,
-      'propertyTitle': widget.property.title,
-      'propertyLocation': widget.property.location,
-      'name': request.name,
-      'phone': request.phone,
-      'date': Timestamp.fromDate(request.date),
-      'time': request.time,
-      'message': request.message,
-      'status': 'pending',
-      'submittedAt': Timestamp.now(),
-    });
+    .collection('viewing_requests')
+    .doc(requestId)
+    .set({
+  'id': requestId,
+
+  // ----------------------------------------------------------
+  // TENANT
+  // ----------------------------------------------------------
+
+  'tenantId': user.uid,
+
+  // ----------------------------------------------------------
+  // PROPERTY
+  // ----------------------------------------------------------
+
+  'propertyId': widget.property.id,
+  'providerIds': [
+  if (widget.property.ownerId.trim().isNotEmpty)
+    widget.property.ownerId.trim(),
+  if (widget.property.managedById.trim().isNotEmpty)
+    widget.property.managedById.trim(),
+],
+  'propertyTitle': widget.property.title,
+  'propertyLocation': widget.property.location,
+
+  // ----------------------------------------------------------
+  // PROPERTY PROVIDERS
+  // Both landlord and managing agent can see this request.
+  // ----------------------------------------------------------
+
+  'ownerId': widget.property.ownerId,
+  'managedById': widget.property.managedById,
+
+  'providerIds': [
+    if (widget.property.ownerId.trim().isNotEmpty)
+      widget.property.ownerId,
+
+    if (widget.property.managedById.trim().isNotEmpty &&
+        widget.property.managedById !=
+            widget.property.ownerId)
+      widget.property.managedById,
+  ],
+
+  // ----------------------------------------------------------
+  // VIEWING DETAILS
+  // ----------------------------------------------------------
+
+  'name': request.name,
+  'phone': request.phone,
+  'date': Timestamp.fromDate(request.date),
+  'time': request.time,
+  'message': request.message,
+
+  // ----------------------------------------------------------
+  // STATUS
+  // ----------------------------------------------------------
+
+  'status': 'pending',
+  'submittedAt': Timestamp.now(),
+});
 
     ViewingRequests.add(request);
 
     if (!mounted) return;
 
     Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ViewingConfirmationScreen(
-          request: request,
-        ),
-      ),
-    );
+  context,
+  MaterialPageRoute(
+    builder: (_) => ViewingConfirmationScreen(
+      request: request,
+    ),
+  ),
+);
   } catch (e) {
     if (!mounted) return;
 
@@ -6719,6 +7572,782 @@ class _ViewingsScreenState extends State<ViewingsScreen> {
   }
 }
 // ============================================================
+// PROPERTY PROVIDER VIEWING REQUESTS
+// Landlord and Agent can both see requests for the same property
+// ============================================================
+
+class PropertyProviderViewingsScreen
+    extends StatefulWidget {
+  const PropertyProviderViewingsScreen({
+    super.key,
+  });
+
+  @override
+  State<PropertyProviderViewingsScreen> createState() =>
+      _PropertyProviderViewingsScreenState();
+}
+
+class _PropertyProviderViewingsScreenState
+    extends State<PropertyProviderViewingsScreen> {
+  bool isCheckingRole = true;
+  bool isLandlord = false;
+  bool isAgent = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkRole();
+  }
+
+  // ==========================================================
+  // CHECK LANDLORD / AGENT ROLE
+  // ==========================================================
+
+  Future<void> _checkRole() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      if (!mounted) return;
+
+      setState(() {
+        isCheckingRole = false;
+        isLandlord = false;
+        isAgent = false;
+      });
+
+      return;
+    }
+
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      final role =
+          userDoc.data()?['role']?.toString().trim().toLowerCase();
+
+      if (!mounted) return;
+
+      if (role == 'landlord' || role == 'agent') {
+        setState(() {
+          isCheckingRole = false;
+          isLandlord = role == 'landlord';
+          isAgent = role == 'agent';
+        });
+      } else {
+        setState(() {
+          isCheckingRole = false;
+          isLandlord = false;
+          isAgent = false;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        isCheckingRole = false;
+        isLandlord = false;
+        isAgent = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not verify your account type.',
+          ),
+        ),
+      );
+    }
+  }
+
+  // ==========================================================
+  // APPROVE VIEWING REQUEST
+  // ==========================================================
+
+  Future<void> _approveRequest(
+    BuildContext context,
+    String requestId,
+  ) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('viewing_requests')
+          .doc(requestId)
+          .update({
+        'status': 'approved',
+        'approvedBy': FirebaseAuth.instance.currentUser?.uid ?? '',
+        'approvedAt': FieldValue.serverTimestamp(),
+        'rejectionReason': FieldValue.delete(),
+      });
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Viewing request approved.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not approve this viewing request.',
+          ),
+        ),
+      );
+    }
+  }
+
+  // ==========================================================
+  // REJECT VIEWING REQUEST
+  // ==========================================================
+
+  Future<void> _rejectRequest(
+    BuildContext context,
+    String requestId,
+  ) async {
+    final reasonController =
+        TextEditingController();
+
+    final shouldReject = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(
+            'Reject Viewing Request',
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Please provide a reason for rejecting this request.',
+              ),
+              const SizedBox(height: 15),
+              TextField(
+                controller: reasonController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Reason',
+                  hintText:
+                      'e.g. The requested time is unavailable.',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  false,
+                );
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  true,
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Reject'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldReject != true) {
+      reasonController.dispose();
+      return;
+    }
+
+    final reason =
+        reasonController.text.trim();
+
+    reasonController.dispose();
+
+    if (reason.isEmpty) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please provide a rejection reason.',
+          ),
+        ),
+      );
+
+      return;
+    }
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('viewing_requests')
+          .doc(requestId)
+          .update({
+        'status': 'rejected',
+        'rejectedBy':
+            FirebaseAuth.instance.currentUser?.uid ?? '',
+        'rejectedAt':
+            FieldValue.serverTimestamp(),
+        'rejectionReason': reason,
+        'approvedAt': FieldValue.delete(),
+        'approvedBy': FieldValue.delete(),
+      });
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Viewing request rejected.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not reject this viewing request.',
+          ),
+        ),
+      );
+    }
+  }
+
+  // ==========================================================
+  // VIEWING REQUEST CARD
+  // ==========================================================
+
+  Widget _requestCard(
+    BuildContext context,
+    String requestId,
+    Map<String, dynamic> data,
+  ) {
+    final propertyTitle =
+        data['propertyTitle']?.toString() ??
+            'Rental Property';
+
+    final propertyLocation =
+        data['propertyLocation']?.toString() ??
+            '';
+
+    final tenantName =
+        data['name']?.toString() ??
+            'Tenant';
+
+    final tenantPhone =
+        data['phone']?.toString() ??
+            '';
+
+    final requestedTime =
+        data['time']?.toString() ??
+            '';
+
+    final tenantMessage =
+        data['message']?.toString() ??
+            '';
+
+    final status =
+        data['status']?.toString() ??
+            'pending';
+
+    final dateValue = data['date'];
+
+    DateTime? viewingDate;
+
+    if (dateValue is Timestamp) {
+      viewingDate = dateValue.toDate();
+    }
+
+    final dateText = viewingDate == null
+        ? 'Date not available'
+        : '${viewingDate.day}/'
+            '${viewingDate.month}/'
+            '${viewingDate.year}';
+
+    Color statusColor;
+    String statusText;
+    IconData statusIcon;
+
+    if (status == 'approved') {
+      statusColor = availableGreen;
+      statusText = 'APPROVED';
+      statusIcon =
+          Icons.check_circle_outline;
+    } else if (status == 'rejected') {
+      statusColor = Colors.red;
+      statusText = 'REJECTED';
+      statusIcon =
+          Icons.cancel_outlined;
+    } else {
+      statusColor = Colors.orange;
+      statusText = 'PENDING';
+      statusIcon =
+          Icons.pending_outlined;
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(
+        bottom: 14,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
+          children: [
+            // --------------------------------------------------
+            // PROPERTY
+            // --------------------------------------------------
+
+            Text(
+              propertyTitle,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+
+            if (propertyLocation.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                propertyLocation,
+                style: const TextStyle(
+                  color: secondaryTextColor,
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 14),
+
+            // --------------------------------------------------
+            // STATUS
+            // --------------------------------------------------
+
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(
+                vertical: 11,
+                horizontal: 12,
+              ),
+              decoration: BoxDecoration(
+                color: statusColor.withValues(
+                  alpha: 0.07,
+                ),
+                borderRadius:
+                    BorderRadius.circular(10),
+                border: Border.all(
+                  color: statusColor.withValues(
+                    alpha: 0.25,
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    statusIcon,
+                    color: statusColor,
+                    size: 21,
+                  ),
+                  const SizedBox(width: 9),
+                  Text(
+                    statusText,
+                    style: TextStyle(
+                      color: statusColor,
+                      fontWeight:
+                          FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // --------------------------------------------------
+            // TENANT DETAILS
+            // --------------------------------------------------
+
+            const Text(
+              'Tenant',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            Row(
+              children: [
+                const Icon(
+                  Icons.person_outline,
+                  size: 20,
+                  color: primaryOrange,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(tenantName),
+                ),
+              ],
+            ),
+
+            if (tenantPhone.isNotEmpty) ...[
+              const SizedBox(height: 7),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.phone_outlined,
+                    size: 20,
+                    color: primaryOrange,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(tenantPhone),
+                  ),
+                ],
+              ),
+            ],
+
+            const SizedBox(height: 16),
+
+            // --------------------------------------------------
+            // REQUESTED VIEWING
+            // --------------------------------------------------
+
+            const Text(
+              'Requested Viewing',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            Row(
+              children: [
+                const Icon(
+                  Icons.calendar_month_outlined,
+                  size: 20,
+                  color: primaryOrange,
+                ),
+                const SizedBox(width: 8),
+                Text(dateText),
+              ],
+            ),
+
+            const SizedBox(height: 7),
+
+            Row(
+              children: [
+                const Icon(
+                  Icons.access_time,
+                  size: 20,
+                  color: primaryOrange,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  requestedTime.isEmpty
+                      ? 'Time not available'
+                      : requestedTime,
+                ),
+              ],
+            ),
+
+            // --------------------------------------------------
+            // TENANT MESSAGE
+            // --------------------------------------------------
+
+            if (tenantMessage.trim().isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text(
+                'Tenant Message',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 7),
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius:
+                      BorderRadius.circular(10),
+                ),
+                child: Text(
+                  tenantMessage,
+                  style: const TextStyle(
+                    color: secondaryTextColor,
+                  ),
+                ),
+              ),
+            ],
+
+            // --------------------------------------------------
+            // ACTIONS
+            // --------------------------------------------------
+
+            if (status == 'pending') ...[
+              const SizedBox(height: 18),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        _rejectRequest(
+                          context,
+                          requestId,
+                        );
+                      },
+                      icon: const Icon(
+                        Icons.close,
+                      ),
+                      label: const Text(
+                        'Reject',
+                      ),
+                      style:
+                          OutlinedButton.styleFrom(
+                        foregroundColor:
+                            Colors.red,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        _approveRequest(
+                          context,
+                          requestId,
+                        );
+                      },
+                      icon: const Icon(
+                        Icons.check,
+                      ),
+                      label: const Text(
+                        'Approve',
+                      ),
+                      style:
+                          ElevatedButton.styleFrom(
+                        backgroundColor:
+                            availableGreen,
+                        foregroundColor:
+                            Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
+            // --------------------------------------------------
+            // REJECTION REASON
+            // --------------------------------------------------
+
+            if (status == 'rejected') ...[
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(
+                    alpha: 0.06,
+                  ),
+                  borderRadius:
+                      BorderRadius.circular(10),
+                  border: Border.all(
+                    color: Colors.red.withValues(
+                      alpha: 0.20,
+                    ),
+                  ),
+                ),
+                child: Text(
+                  'Rejection reason: '
+                  '${data['rejectionReason']?.toString() ?? 'No reason provided.'}',
+                  style: const TextStyle(
+                    color: Colors.red,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ==========================================================
+  // BUILD
+  // ==========================================================
+
+  @override
+  Widget build(BuildContext context) {
+    if (isCheckingRole) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'Viewing Requests',
+          ),
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(
+            color: primaryOrange,
+          ),
+        ),
+      );
+    }
+
+    if (!isLandlord && !isAgent) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'Viewing Requests',
+          ),
+        ),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(25),
+            child: Text(
+              'Landlord or Agent access required.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: secondaryTextColor,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final user =
+        FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'Viewing Requests',
+          ),
+        ),
+        body: const Center(
+          child: Text(
+            'Please log in to continue.',
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Viewing Requests',
+        ),
+      ),
+      body: StreamBuilder<
+          QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('viewing_requests')
+            .where(
+              'providerIds',
+              arrayContains: user.uid,
+            )
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState ==
+              ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(25),
+                child: Text(
+                  'Could not load viewing requests.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
+
+          final documents =
+              snapshot.data?.docs ?? [];
+
+          if (documents.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(25),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.calendar_month_outlined,
+                      size: 70,
+                      color: Colors.grey,
+                    ),
+                    SizedBox(height: 15),
+                    Text(
+                      'No viewing requests yet',
+                      style: TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Tenant viewing requests for your properties will appear here.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: secondaryTextColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: documents.length,
+            itemBuilder: (context, index) {
+              final document =
+                  documents[index];
+
+              return _requestCard(
+                context,
+                document.id,
+                document.data(),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+// ============================================================
 // SAVED SCREEN
 // ============================================================
 
@@ -7111,6 +8740,7 @@ class _SavedScreenState extends State<SavedScreen> {
     );
   }
 }
+
 // ============================================================
 // LANDLORD DASHBOARD
 // ============================================================
@@ -7364,7 +8994,22 @@ bool isAgent = false;
               );
             },
           ),
+           const SizedBox(height: 12),
 
+              _dashboardButton(
+                context,
+                Icons.calendar_month_outlined,
+                'Viewings',
+                'View and manage tenant viewing requests',
+                () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const PropertyProviderViewingsScreen(),
+                    ),
+                  );
+                },
+              ),
           // ============================================================
           // OWNER REQUESTS — AGENT ONLY
           // ============================================================
@@ -11657,14 +13302,59 @@ class AgentOwnerRequestsScreen extends StatelessWidget {
 
                       const SizedBox(height: 6),
 
-                      Text(
-                        'Property ID: $propertyId',
-                        style: const TextStyle(
-                          color: secondaryTextColor,
-                          fontSize: 12,
-                        ),
-                      ),
                       // ============================================================
+// PROPERTY TITLE
+// ============================================================
+
+FutureBuilder<DocumentSnapshot>(
+  future: FirebaseFirestore.instance
+      .collection('properties')
+      .doc(propertyId)
+      .get(),
+  builder: (context, propertySnapshot) {
+    String propertyTitle = 'Property';
+
+    if (propertySnapshot.hasData &&
+        propertySnapshot.data!.exists) {
+      final propertyData =
+          propertySnapshot.data!.data()
+              as Map<String, dynamic>?;
+
+      propertyTitle =
+          propertyData?['title']?.toString().trim() ??
+              'Property';
+
+      if (propertyTitle.isEmpty) {
+        propertyTitle = 'Property';
+      }
+    }
+
+    return Column(
+      crossAxisAlignment:
+          CrossAxisAlignment.start,
+      children: [
+        Text(
+          propertyTitle,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+
+        const SizedBox(height: 5),
+
+        Text(
+          'Property ID: $propertyId',
+          style: const TextStyle(
+            color: secondaryTextColor,
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  },
+),
+// ============================================================
 // STATUS
 // ============================================================
 
@@ -12543,14 +14233,58 @@ Future<void> _approveRequest(
                               height: 8,
                             ),
 
-                            Text(
-                              'Property ID: $propertyId',
-                              style:
-                                  const TextStyle(
-                                color:
-                                    secondaryTextColor,
-                              ),
-                            ),
+// ============================================================
+// PROPERTY TITLE
+// ============================================================
+
+FutureBuilder<DocumentSnapshot>(
+  future: FirebaseFirestore.instance
+      .collection('properties')
+      .doc(propertyId)
+      .get(),
+  builder: (context, propertySnapshot) {
+    String propertyTitle = 'Property';
+
+    if (propertySnapshot.hasData &&
+        propertySnapshot.data!.exists) {
+      final propertyData =
+          propertySnapshot.data!.data()
+              as Map<String, dynamic>?;
+
+      propertyTitle =
+          propertyData?['title']?.toString().trim() ??
+              'Property';
+
+      if (propertyTitle.isEmpty) {
+        propertyTitle = 'Property';
+      }
+    }
+
+    return Column(
+      crossAxisAlignment:
+          CrossAxisAlignment.start,
+      children: [
+        Text(
+          propertyTitle,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+
+        const SizedBox(height: 5),
+
+        Text(
+          'Property ID: $propertyId',
+          style: const TextStyle(
+            color: secondaryTextColor,
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  },
+),
                           ],
                         ),
                       ),
@@ -13735,13 +15469,57 @@ class AdminAgentVerificationScreen
                               height: 8,
                             ),
 
-                            Text(
-                              'Property ID: $propertyId',
-                              style:
-                                  const TextStyle(
-                                color:
-                                    secondaryTextColor,
-                              ),
+                            // ============================================================
+                            // PROPERTY TITLE
+                            // ============================================================
+
+                            FutureBuilder<DocumentSnapshot>(
+                              future: FirebaseFirestore.instance
+                                  .collection('properties')
+                                  .doc(propertyId)
+                                  .get(),
+                              builder: (context, propertySnapshot) {
+                                String propertyTitle = 'Property';
+
+                                if (propertySnapshot.hasData &&
+                                    propertySnapshot.data!.exists) {
+                                  final propertyData =
+                                      propertySnapshot.data!.data()
+                                          as Map<String, dynamic>?;
+
+                                  propertyTitle =
+                                      propertyData?['title']?.toString().trim() ??
+                                          'Property';
+
+                                  if (propertyTitle.isEmpty) {
+                                    propertyTitle = 'Property';
+                                  }
+                                }
+
+                                return Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      propertyTitle,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+
+                                    const SizedBox(height: 5),
+
+                                    Text(
+                                      'Property ID: $propertyId',
+                                      style: const TextStyle(
+                                        color: secondaryTextColor,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
                             ),
                           ],
                         ),
