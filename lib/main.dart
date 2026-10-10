@@ -4795,6 +4795,66 @@ Container(
 
 const SizedBox(height: 20),
 
+// ============================================================
+// AVAILABILITY
+// ============================================================
+Container(
+  width: double.infinity,
+  padding: const EdgeInsets.all(14),
+  decoration: BoxDecoration(
+    color: _availabilityBackgroundColor(
+      property.availability,
+    ),
+    borderRadius: BorderRadius.circular(12),
+    border: Border.all(
+      color: _availabilityBorderColor(
+        property.availability,
+      ),
+    ),
+  ),
+  child: Row(
+    children: [
+      Icon(
+        _availabilityIcon(
+          property.availability,
+        ),
+        color: _availabilityColor(
+          property.availability,
+        ),
+        size: 26,
+      ),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Availability',
+              style: TextStyle(
+                fontSize: 12,
+                color: secondaryTextColor,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              property.availability,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: _availabilityColor(
+                  property.availability,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  ),
+),
+
+const SizedBox(height: 24),
+
 // PROPERTY FEATURES
 Row(
                     children: [
@@ -4924,6 +4984,93 @@ Row(
       ),
     );
   }
+  Color _availabilityColor(String availability) {
+  switch (availability) {
+    case 'Available now':
+      return availableGreen;
+
+    case 'Available this month':
+      return Colors.orange;
+
+    case 'Available next month':
+      return Colors.blue;
+
+    case 'Reserved':
+      return Colors.amber.shade800;
+
+    case 'Rented / Occupied':
+      return Colors.red;
+
+    default:
+      return Colors.grey;
+  }
+}
+
+Color _availabilityBackgroundColor(String availability) {
+  switch (availability) {
+    case 'Available now':
+      return Colors.green.shade50;
+
+    case 'Available this month':
+      return Colors.orange.shade50;
+
+    case 'Available next month':
+      return Colors.blue.shade50;
+
+    case 'Reserved':
+      return Colors.amber.shade50;
+
+    case 'Rented / Occupied':
+      return Colors.red.shade50;
+
+    default:
+      return Colors.grey.shade100;
+  }
+}
+
+Color _availabilityBorderColor(String availability) {
+  switch (availability) {
+    case 'Available now':
+      return Colors.green.shade100;
+
+    case 'Available this month':
+      return Colors.orange.shade100;
+
+    case 'Available next month':
+      return Colors.blue.shade100;
+
+    case 'Reserved':
+      return Colors.amber.shade100;
+
+    case 'Rented / Occupied':
+      return Colors.red.shade100;
+
+    default:
+      return Colors.grey.shade200;
+  }
+}
+
+IconData _availabilityIcon(String availability) {
+  switch (availability) {
+    case 'Available now':
+      return Icons.check_circle_outline;
+
+    case 'Available this month':
+      return Icons.event_available_outlined;
+
+    case 'Available next month':
+      return Icons.calendar_month_outlined;
+
+    case 'Reserved':
+      return Icons.lock_outline;
+
+    case 'Rented / Occupied':
+      return Icons.home_work_outlined;
+
+    default:
+      return Icons.info_outline;
+  }
+}
 
   Widget _detailItem(
     IconData icon,
@@ -6653,6 +6800,125 @@ class _ViewingRequestScreenState
 
   DateTime? selectedDate;
   String? selectedTime;
+  bool _scheduleLoading = true;
+  bool _scheduleLoadFailed = false;
+
+  Map<String, dynamic> _viewingSchedule = {};
+
+  static const Map<int, String> _weekdayKeys = {
+    DateTime.monday: 'monday',
+    DateTime.tuesday: 'tuesday',
+    DateTime.wednesday: 'wednesday',
+    DateTime.thursday: 'thursday',
+    DateTime.friday: 'friday',
+    DateTime.saturday: 'saturday',
+    DateTime.sunday: 'sunday',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadViewingSchedule();
+  }
+
+  Future<void> _loadViewingSchedule() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('properties')
+          .doc(widget.property.id)
+          .get();
+
+      if (!doc.exists || doc.data() == null) {
+        throw Exception('Property not found');
+      }
+
+      final rawSchedule = doc.data()!['viewingSchedule'];
+
+      if (rawSchedule is! Map) {
+        if (!mounted) return;
+        setState(() {
+          _scheduleLoading = false;
+          _scheduleLoadFailed = true;
+        });
+        return;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _viewingSchedule = Map<String, dynamic>.from(rawSchedule);
+        _scheduleLoading = false;
+        _scheduleLoadFailed = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _scheduleLoading = false;
+        _scheduleLoadFailed = true;
+      });
+    }
+  }
+
+  int? _minutesFromTime(String value) {
+    final match = RegExp(
+      r'^(\d{1,2}):(\d{2})\s*(AM|PM)$',
+      caseSensitive: false,
+    ).firstMatch(value.trim());
+
+    if (match == null) return null;
+
+    var hour = int.parse(match.group(1)!);
+    final minute = int.parse(match.group(2)!);
+    final period = match.group(3)!.toUpperCase();
+
+    if (hour < 1 || hour > 12 || minute > 59) {
+      return null;
+    }
+
+    if (period == 'AM') {
+      if (hour == 12) hour = 0;
+    } else if (hour != 12) {
+      hour += 12;
+    }
+
+    return hour * 60 + minute;
+  }
+
+  Map<String, dynamic>? _scheduleForDate(DateTime date) {
+    final key = _weekdayKeys[date.weekday];
+    final value = _viewingSchedule[key];
+
+    if (value is! Map) return null;
+
+    return Map<String, dynamic>.from(value);
+  }
+
+  List<String> _availableTimesForDate(DateTime date) {
+    final day = _scheduleForDate(date);
+
+    if (day == null || day['enabled'] != true) {
+      return [];
+    }
+
+    final start = _minutesFromTime(
+      day['start']?.toString() ?? '',
+    );
+    final end = _minutesFromTime(
+      day['end']?.toString() ?? '',
+    );
+
+    if (start == null || end == null || end <= start) {
+      return [];
+    }
+
+    return times.where((time) {
+      final minutes = _minutesFromTime(time);
+
+      return minutes != null &&
+          minutes >= start &&
+          minutes <= end;
+    }).toList();
+  }
 
   final List<String> times = [
     '9:00 AM',
@@ -6664,7 +6930,82 @@ class _ViewingRequestScreenState
     '4:00 PM',
     '5:00 PM',
   ];
+// ============================================================
+// CHOOSE VIEWING DATE
+// ============================================================
 
+Future<void> chooseDate() async {
+  if (_scheduleLoading) return;
+
+  if (_scheduleLoadFailed) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Could not load this property’s viewing schedule. Please try again.',
+        ),
+      ),
+    );
+    return;
+  }
+
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final lastDate = today.add(const Duration(days: 90));
+
+  bool isSelectable(DateTime date) {
+    return _availableTimesForDate(date).isNotEmpty;
+  }
+
+  DateTime? firstAvailableDate;
+
+  for (var i = 0; i <= 90; i++) {
+    final candidate = today.add(Duration(days: i));
+
+    if (isSelectable(candidate)) {
+      firstAvailableDate = candidate;
+      break;
+    }
+  }
+
+  if (firstAvailableDate == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'No viewing days or times are currently available for this property.',
+        ),
+      ),
+    );
+    return;
+  }
+
+  final previousDate = selectedDate;
+  final initialDate = previousDate != null &&
+          !previousDate.isBefore(today) &&
+          !previousDate.isAfter(lastDate) &&
+          isSelectable(previousDate)
+      ? previousDate
+      : firstAvailableDate;
+
+  final date = await showDatePicker(
+    context: context,
+    firstDate: today,
+    lastDate: lastDate,
+    initialDate: initialDate,
+    selectableDayPredicate: isSelectable,
+  );
+
+  if (date != null && mounted) {
+    setState(() {
+      selectedDate = date;
+
+      final availableTimes = _availableTimesForDate(date);
+
+      if (!availableTimes.contains(selectedTime)) {
+        selectedTime = null;
+      }
+    });
+  }
+}
   @override
   void dispose() {
     nameController.dispose();
@@ -6673,40 +7014,30 @@ class _ViewingRequestScreenState
     super.dispose();
   }
 
-  Future<void> chooseDate() async {
-    final now = DateTime.now();
-
-    final date = await showDatePicker(
-      context: context,
-      firstDate: now,
-      lastDate: now.add(
-        const Duration(days: 90),
-      ),
-      initialDate: now,
-    );
-
-    if (date != null) {
-      setState(() {
-        selectedDate = date;
-      });
-    }
-  }
-
 Future<void> submit() async {
   final user = FirebaseAuth.instance.currentUser;
 
-if (user == null) {
-  if (!mounted) return;
+  // ------------------------------------------------------------
+  // LOGIN CHECK
+  // ------------------------------------------------------------
 
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => const AuthScreen(),
-    ),
-  );
+  if (user == null) {
+    if (!mounted) return;
 
-  return;
-}
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const AuthScreen(),
+      ),
+    );
+
+    return;
+  }
+
+  // ------------------------------------------------------------
+  // REQUIRED FIELD CHECK
+  // ------------------------------------------------------------
+
   if (nameController.text.trim().isEmpty ||
       phoneController.text.trim().isEmpty ||
       selectedDate == null ||
@@ -6718,203 +7049,213 @@ if (user == null) {
         ),
       ),
     );
+
     return;
   }
-// ============================================================
-// CHECK IF THE REQUESTED DATE AND TIME IS ALREADY BOOKED
-// ============================================================
 
-// We only query by propertyId.
-// Date, time and status are checked locally so we do not
-// require a Firestore composite index.
-
-final existingRequests = await FirebaseFirestore.instance
-    .collection('viewing_requests')
-    .where(
-      'propertyId',
-      isEqualTo: widget.property.id,
-    )
-    .get();
-
-final requestedDate = selectedDate!;
-
-bool timeAlreadyRequested = false;
-
-for (final document in existingRequests.docs) {
-  final data = document.data();
-
-  final status =
-      data['status']?.toString().trim().toLowerCase();
-
-  if (status != 'pending' &&
-      status != 'approved') {
-    continue;
-  }
-
-  final dateValue = data['date'];
-
-  if (dateValue is! Timestamp) {
-    continue;
-  }
-
-  final existingDate = dateValue.toDate();
-
-  final sameDate =
-      existingDate.year == requestedDate.year &&
-      existingDate.month == requestedDate.month &&
-      existingDate.day == requestedDate.day;
-
-  final existingTime =
-      data['time']?.toString() ?? '';
-
-  if (sameDate &&
-      existingTime == selectedTime) {
-    timeAlreadyRequested = true;
-    break;
-  }
-}
-
-if (timeAlreadyRequested) {
-  if (!mounted) return;
-
-  showDialog(
-    context: context,
-    builder: (dialogContext) {
-      return AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        icon: const Icon(
-          Icons.event_busy_outlined,
-          color: Colors.orange,
-          size: 45,
-        ),
-        title: const Text(
-          'Viewing Time Unavailable',
-          textAlign: TextAlign.center,
-        ),
-        content: const Text(
-          'The property manager is not available at the selected date and time. '
-          'Please choose another date or time for your viewing request.',
-          textAlign: TextAlign.center,
-        ),
-        actions: [
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryOrange,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text(
-                'Choose Another Time',
-              ),
-            ),
-          ),
-        ],
-      );
-    },
-  );
-
-  return;
-}
-  final request = ViewingRequest(
-    property: widget.property,
-    name: nameController.text.trim(),
-    phone: phoneController.text.trim(),
-    date: selectedDate!,
-    time: selectedTime!,
-    message: messageController.text.trim(),
-  );
+  // ------------------------------------------------------------
+  // CHECK VIEWING AVAILABILITY
+  // ------------------------------------------------------------
 
   try {
+    final existingRequests =
+        await FirebaseFirestore.instance
+            .collection('viewing_requests')
+            .where(
+              'propertyId',
+              isEqualTo: widget.property.id,
+            )
+            .get();
+
+    final requestedDate = selectedDate!;
+
+    bool timeAlreadyBooked = false;
+
+    for (final document in existingRequests.docs) {
+      final data = document.data();
+
+      final status =
+          data['status']?.toString().toLowerCase() ?? '';
+
+      // Only pending and approved requests
+      // should block the viewing slot.
+      if (status != 'pending' &&
+          status != 'approved') {
+        continue;
+      }
+
+      final dateValue = data['date'];
+
+      if (dateValue is! Timestamp) {
+        continue;
+      }
+
+      final existingDate = dateValue.toDate();
+
+      final sameDate =
+          existingDate.year == requestedDate.year &&
+          existingDate.month == requestedDate.month &&
+          existingDate.day == requestedDate.day;
+
+      final existingTime =
+          data['time']?.toString() ?? '';
+
+      final sameTime =
+          existingTime == selectedTime;
+
+      if (sameDate && sameTime) {
+        timeAlreadyBooked = true;
+        break;
+      }
+    }
+
+    // ----------------------------------------------------------
+    // SLOT NOT AVAILABLE
+    // ----------------------------------------------------------
+
+    if (timeAlreadyBooked) {
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            icon: const Icon(
+              Icons.event_busy_outlined,
+              color: Colors.orange,
+              size: 45,
+            ),
+            title: const Text(
+              'Viewing Time Unavailable',
+              textAlign: TextAlign.center,
+            ),
+            content: const Text(
+              'The selected viewing date and time is no longer available. '
+              'Please choose another date or time and try again.',
+              textAlign: TextAlign.center,
+            ),
+            actions: [
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryOrange,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 13,
+                    ),
+                  ),
+                  child: const Text(
+                    'Choose Another Time',
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+
+      return;
+    }
+
+    // ------------------------------------------------------------
+    // CREATE VIEWING REQUEST
+    // ------------------------------------------------------------
+
+    final request = ViewingRequest(
+      property: widget.property,
+      name: nameController.text.trim(),
+      phone: phoneController.text.trim(),
+      date: selectedDate!,
+      time: selectedTime!,
+      message: messageController.text.trim(),
+    );
+
     final requestId =
         DateTime.now().millisecondsSinceEpoch.toString();
 
-    await FirebaseFirestore.instance
+    // ============================================================
+// GET PROPERTY PROVIDER INFORMATION
+// ============================================================
+
+final propertyDoc = await FirebaseFirestore.instance
+    .collection('properties')
+    .doc(widget.property.id)
+    .get();
+
+final propertyData = propertyDoc.data();
+
+final ownerId =
+    propertyData?['ownerId']?.toString().trim() ?? '';
+
+final managedById =
+    propertyData?['managedById']?.toString().trim() ?? '';
+
+// Both landlord and agent will receive the same viewing request.
+final providerIds = <String>{
+  if (ownerId.isNotEmpty) ownerId,
+  if (managedById.isNotEmpty) managedById,
+}.toList();
+
+// ============================================================
+// SAVE VIEWING REQUEST
+// ============================================================
+
+await FirebaseFirestore.instance
     .collection('viewing_requests')
     .doc(requestId)
     .set({
   'id': requestId,
 
-  // ----------------------------------------------------------
-  // TENANT
-  // ----------------------------------------------------------
-
+  // Tenant
   'tenantId': user.uid,
+  'name': request.name,
+  'phone': request.phone,
 
-  // ----------------------------------------------------------
-  // PROPERTY
-  // ----------------------------------------------------------
-
+  // Property
   'propertyId': widget.property.id,
-  'providerIds': [
-  if (widget.property.ownerId.trim().isNotEmpty)
-    widget.property.ownerId.trim(),
-  if (widget.property.managedById.trim().isNotEmpty)
-    widget.property.managedById.trim(),
-],
   'propertyTitle': widget.property.title,
   'propertyLocation': widget.property.location,
 
-  // ----------------------------------------------------------
-  // PROPERTY PROVIDERS
-  // Both landlord and managing agent can see this request.
-  // ----------------------------------------------------------
+  // Property providers
+  'ownerId': ownerId,
+  'managedById': managedById,
+  'providerIds': providerIds,
 
-  'ownerId': widget.property.ownerId,
-  'managedById': widget.property.managedById,
-
-  'providerIds': [
-    if (widget.property.ownerId.trim().isNotEmpty)
-      widget.property.ownerId,
-
-    if (widget.property.managedById.trim().isNotEmpty &&
-        widget.property.managedById !=
-            widget.property.ownerId)
-      widget.property.managedById,
-  ],
-
-  // ----------------------------------------------------------
-  // VIEWING DETAILS
-  // ----------------------------------------------------------
-
-  'name': request.name,
-  'phone': request.phone,
+  // Requested viewing
   'date': Timestamp.fromDate(request.date),
   'time': request.time,
   'message': request.message,
 
-  // ----------------------------------------------------------
-  // STATUS
-  // ----------------------------------------------------------
-
+  // Status
   'status': 'pending',
   'submittedAt': Timestamp.now(),
 });
-
     ViewingRequests.add(request);
 
     if (!mounted) return;
 
     Navigator.pushReplacement(
-  context,
-  MaterialPageRoute(
-    builder: (_) => ViewingConfirmationScreen(
-      request: request,
-    ),
-  ),
-);
+      context,
+      MaterialPageRoute(
+        builder: (_) => ViewingConfirmationScreen(
+          request: request,
+        ),
+      ),
+    );
   } catch (e) {
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Could not submit viewing request. Please try again.\n$e',
+          'Could not check viewing availability. Please try again.',
         ),
         duration: const Duration(seconds: 5),
       ),
@@ -6932,6 +7273,27 @@ if (timeAlreadyRequested) {
       body: ListView(
         padding: const EdgeInsets.all(18),
         children: [
+          if (_scheduleLoading)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: LinearProgressIndicator(),
+              )
+            else if (_scheduleLoadFailed)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: Text(
+                  'Viewing availability could not be loaded. '
+                  'Please try again later.',
+                  style: TextStyle(color: Colors.red),
+                ),
+              )
+            else if (_viewingSchedule.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: Text(
+                  'This property has no viewing schedule configured yet.',
+                ),
+              ),
           Text(
             widget.property.title,
             style: const TextStyle(
@@ -7002,15 +7364,16 @@ if (timeAlreadyRequested) {
               border:
                   OutlineInputBorder(),
             ),
-            items: times
-                .map(
-                  (time) =>
-                      DropdownMenuItem(
-                    value: time,
-                    child: Text(time),
-                  ),
-                )
-                .toList(),
+            items: (selectedDate == null
+                ? <String>[]
+                : _availableTimesForDate(selectedDate!))
+            .map(
+              (time) => DropdownMenuItem<String>(
+                value: time,
+                child: Text(time),
+              ),
+            )
+    .toList(),
             onChanged: (value) {
               setState(() {
                 selectedTime = value;
@@ -7036,7 +7399,9 @@ if (timeAlreadyRequested) {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: submit,
+              onPressed: _scheduleLoading || _scheduleLoadFailed
+              ? null
+              : submit,
               style:
                   ElevatedButton.styleFrom(
                 backgroundColor:
@@ -7200,80 +7565,42 @@ class ViewingConfirmationScreen
 // VIEWINGS SCREEN
 // ============================================================
 class ViewingsScreen extends StatefulWidget {
+  final VoidCallback? onAccessDenied;
+
   const ViewingsScreen({
     super.key,
     this.onAccessDenied,
   });
 
-  final VoidCallback? onAccessDenied;
-
   @override
-  State<ViewingsScreen> createState() =>
-      _ViewingsScreenState();
+  State<ViewingsScreen> createState() => _ViewingsScreenState();
 }
 
 class _ViewingsScreenState extends State<ViewingsScreen> {
-  bool isCheckingRole = true;
-  bool isTenant = false;
-
-  String? currentUserId;
-
-  StreamSubscription<User?>? _authSubscription;
+  String? _tenantId;
+  bool _loading = true;
+  bool _isTenant = false;
 
   @override
   void initState() {
     super.initState();
-
-    currentUserId =
-        FirebaseAuth.instance.currentUser?.uid;
-
-    _checkTenantRole();
-
-    _authSubscription =
-        FirebaseAuth.instance.authStateChanges().listen(
-      (user) {
-        final newUserId = user?.uid;
-
-        if (newUserId == currentUserId) {
-          return;
-        }
-
-        currentUserId = newUserId;
-
-        if (!mounted) return;
-
-        // Completely reset the previous account's state.
-        setState(() {
-          isCheckingRole = true;
-          isTenant = false;
-        });
-
-        _checkTenantRole();
-      },
-    );
+    _loadTenant();
   }
 
-  @override
-  void dispose() {
-    _authSubscription?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _checkTenantRole() async {
+  Future<void> _loadTenant() async {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
       if (!mounted) return;
 
       setState(() {
-        isCheckingRole = false;
-        isTenant = false;
+        _tenantId = null;
+        _isTenant = false;
+        _loading = false;
       });
 
       return;
     }
-
-    final checkingUserId = user.uid;
 
     try {
       final userDoc = await FirebaseFirestore.instance
@@ -7281,293 +7608,630 @@ class _ViewingsScreenState extends State<ViewingsScreen> {
           .doc(user.uid)
           .get();
 
-      // Make sure this result still belongs to
-      // the currently logged-in account.
-      if (FirebaseAuth.instance.currentUser?.uid !=
-          checkingUserId) {
-        return;
-      }
-
-      final data = userDoc.data();
-
       final role =
-          data?['role']?.toString().trim().toLowerCase();
+          userDoc.data()?['role']?.toString().toLowerCase() ?? '';
 
       if (!mounted) return;
 
-      if (role == 'tenant') {
-        setState(() {
-          isCheckingRole = false;
-          isTenant = true;
-        });
-      } else {
-        setState(() {
-          isCheckingRole = false;
-          isTenant = false;
-        });
-
-        _showAccessDenied(
-          'My Viewings is available only to tenant accounts.',
-        );
-      }
+      setState(() {
+        _tenantId = user.uid;
+        _isTenant = role == 'tenant';
+        _loading = false;
+      });
     } catch (e) {
       if (!mounted) return;
 
       setState(() {
-        isCheckingRole = false;
-        isTenant = false;
+        _tenantId = user.uid;
+        _isTenant = false;
+        _loading = false;
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Could not verify your account type. Please try again.',
-          ),
-        ),
-      );
     }
   }
 
-  void _showAccessDenied(String message) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+  String _formatDate(Timestamp? timestamp) {
+    if (timestamp == null) {
+      return 'Date not available';
+    }
 
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) {
-          return AlertDialog(
-            icon: const Icon(
-              Icons.lock_outline,
-              color: primaryOrange,
-              size: 42,
-            ),
-            title: const Text(
-              'Tenant Access Only',
-            ),
-            content: Text(message),
-            actions: [
-              ElevatedButton(
-                onPressed: () {
-  Navigator.pop(dialogContext);
+    final date = timestamp.toDate();
 
-  widget.onAccessDenied?.call();
-},
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryOrange,
-                  foregroundColor: Colors.white,
+    return '${date.day}/${date.month}/${date.year}';
+  }
+
+  Widget _statusBadge(String status) {
+    Color backgroundColor;
+    Color textColor;
+    String label;
+    IconData icon;
+
+    switch (status) {
+      case 'approved':
+        backgroundColor = Colors.green.shade50;
+        textColor = Colors.green.shade700;
+        label = 'VIEWING CONFIRMED';
+        icon = Icons.check_circle;
+        break;
+
+      case 'rejected':
+        backgroundColor = Colors.red.shade50;
+        textColor = Colors.red.shade700;
+        label = 'DECLINED';
+        icon = Icons.cancel;
+        break;
+
+      default:
+        backgroundColor = Colors.orange.shade50;
+        textColor = Colors.orange.shade800;
+        label = 'PENDING';
+        icon = Icons.hourglass_top;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: 6,
+      ),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 16,
+            color: textColor,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: textColor,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusMessage(
+    String status,
+    String rejectionReason,
+  ) {
+    if (status == 'approved') {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.green.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: Colors.green.shade100,
+          ),
+        ),
+        child: const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.check_circle_outline,
+              color: Colors.green,
+            ),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Your viewing has been confirmed by the property manager.',
+                style: TextStyle(
+                  color: Colors.green,
+                  fontWeight: FontWeight.w600,
                 ),
-                child: const Text(
-                  'Go Back',
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (status == 'rejected') {
+      final isTimeUnavailable =
+          rejectionReason.toLowerCase().contains(
+                'viewing time unavailable',
+              );
+
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.red.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: Colors.red.shade100,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.event_busy_outlined,
+                  color: Colors.red,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    isTimeUnavailable
+                        ? 'Viewing time unavailable. The property manager is not available at the requested date/time. Please select another date or time.'
+                        : rejectionReason.isNotEmpty
+                            ? 'Your viewing request was declined.\n\nReason: $rejectionReason'
+                            : 'Your viewing request was declined. Please select another date or time.',
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: Colors.orange.shade100,
+        ),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.hourglass_top,
+            color: Colors.orange,
+          ),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Your viewing request is waiting for the property manager’s response.',
+              style: TextStyle(
+                color: Colors.orange,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _confirmedViewingInfo(
+    String dateText,
+    String time,
+  ) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.green.shade50,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Your Viewing Details',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: Colors.green,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Icon(
+                Icons.calendar_month,
+                color: Colors.green,
+                size: 21,
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                'Date',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                dateText,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ],
-          );
-        },
-      );
-    });
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Icon(
+                Icons.access_time,
+                color: Colors.green,
+                size: 21,
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                'Time',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                time,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _requestCard(
+    BuildContext context,
+    QueryDocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    final data = document.data();
+
+    final propertyId =
+        data['propertyId']?.toString() ?? '';
+
+    final title =
+        data['propertyTitle']?.toString() ?? 'Property';
+
+    final location =
+        data['propertyLocation']?.toString() ?? '';
+
+    final time =
+        data['time']?.toString() ?? '';
+
+    final status =
+        data['status']?.toString().toLowerCase() ?? 'pending';
+
+    final rejectionReason =
+        data['rejectionReason']?.toString() ?? '';
+
+    final dateText = _formatDate(
+      data['date'] is Timestamp
+          ? data['date'] as Timestamp
+          : null,
+    );
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 14),
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(15),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const CircleAvatar(
+                  backgroundColor: primaryOrange,
+                  child: Icon(
+                    Icons.home,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 17,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        location,
+                        style: const TextStyle(
+                          color: secondaryTextColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            _statusBadge(status),
+
+            const SizedBox(height: 14),
+
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.calendar_month,
+                    size: 20,
+                    color: primaryOrange,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      dateText,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.access_time,
+                    size: 20,
+                    color: primaryOrange,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    time,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            if (status == 'approved') ...[
+              _confirmedViewingInfo(
+                dateText,
+                time,
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            _statusMessage(
+              status,
+              rejectionReason,
+            ),
+
+            if (status == 'rejected') ...[
+              const SizedBox(height: 12),
+
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: propertyId.isEmpty
+                      ? null
+                      : () async {
+                          try {
+                            final propertyDoc =
+                                await FirebaseFirestore.instance
+                                    .collection('properties')
+                                    .doc(propertyId)
+                                    .get();
+
+                            if (!propertyDoc.exists ||
+                                propertyDoc.data() == null) {
+                              if (!context.mounted) return;
+
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'This property is no longer available.',
+                                  ),
+                                ),
+                              );
+
+                              return;
+                            }
+
+                            final property =
+                                rentalPropertyFromFirestore(
+                              propertyDoc.data()!,
+                            );
+
+                            if (!context.mounted) return;
+
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    ViewingRequestScreen(
+                                  property: property,
+                                ),
+                              ),
+                            );
+                          } catch (e) {
+                            if (!context.mounted) return;
+
+                            ScaffoldMessenger.of(context)
+                                .showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Could not open this property. Please try again.',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                  icon: const Icon(
+                    Icons.calendar_month,
+                  ),
+                  label: const Text(
+                    'Choose Another Date / Time',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryOrange,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 13,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (isCheckingRole) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('My Viewings'),
+    if (_loading) {
+      return const Center(
+        child: CircularProgressIndicator(
+          color: primaryOrange,
         ),
-        body: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(
-                color: primaryOrange,
-              ),
-              SizedBox(height: 16),
-              Text(
-                'Checking your account...',
-                style: TextStyle(
-                  color: secondaryTextColor,
-                ),
-              ),
-            ],
+      );
+    }
+
+    if (_tenantId == null) {
+      return const Center(
+        child: Text(
+          'Please log in to view your viewing requests.',
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    if (!_isTenant) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        widget.onAccessDenied?.call();
+      });
+
+      return const Center(
+        child: Text(
+          'Tenant Access Only',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
           ),
         ),
       );
     }
 
-    if (!isTenant) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('My Viewings'),
-        ),
-        body: const Center(
-          child: Text(
-            'Tenant access required.',
-            style: TextStyle(
-              color: secondaryTextColor,
-              fontSize: 16,
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      key: ValueKey('viewings_stream_$_tenantId'),
+      stream: FirebaseFirestore.instance
+          .collection('viewing_requests')
+          .where(
+            'tenantId',
+            isEqualTo: _tenantId,
+          )
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState ==
+            ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(
+              color: primaryOrange,
             ),
-          ),
-        ),
-      );
-    }
+          );
+        }
 
-    final user = FirebaseAuth.instance.currentUser;
-
-    // Extra protection: never build the tenant
-    // viewing query without a logged-in user.
-    if (user == null) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('My Viewings'),
-        ),
-        body: const Center(
-          child: Text(
-            'Please log in to view your requests.',
-            style: TextStyle(
-              color: secondaryTextColor,
-              fontSize: 16,
+        if (snapshot.hasError) {
+          return const Center(
+            child: Text(
+              'Could not load your viewing requests.',
             ),
-          ),
-        ),
-      );
-    }
+          );
+        }
 
-    final tenantId = user.uid;
+        final documents =
+            snapshot.data?.docs ?? [];
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Viewings'),
-      ),
-      body: StreamBuilder<
-          QuerySnapshot<Map<String, dynamic>>>(
-        key: ValueKey(
-          'viewings_stream_$tenantId',
-        ),
-        stream: FirebaseFirestore.instance
-            .collection('viewing_requests')
-            .where(
-              'tenantId',
-              isEqualTo: tenantId,
-            )
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState ==
-              ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
-
-          if (snapshot.hasError) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(30),
-                child: Text(
-                  'Could not load your viewing requests.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-
-          final documents =
-              snapshot.data?.docs ?? [];
-
-          if (documents.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(30),
-                child: Column(
-                  mainAxisAlignment:
-                      MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.calendar_month_outlined,
-                      size: 70,
-                      color: Colors.grey,
-                    ),
-                    SizedBox(height: 15),
-                    Text(
-                      'No viewing requests yet',
-                      style: TextStyle(
-                        fontSize: 21,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      'When you request a property viewing, it will appear here.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: secondaryTextColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: documents.length,
-            itemBuilder: (context, index) {
-              final data =
-                  documents[index].data();
-
-              final title =
-                  data['propertyTitle']?.toString() ??
-                      'Rental Property';
-
-              final location =
-                  data['propertyLocation']?.toString() ??
-                      '';
-
-              final time =
-                  data['time']?.toString() ?? '';
-
-              final dateValue = data['date'];
-
-              DateTime? date;
-
-              if (dateValue is Timestamp) {
-                date = dateValue.toDate();
-              }
-
-              final dateText = date == null
-                  ? 'Date not available'
-                  : '${date.day}/${date.month}/${date.year}';
-
-              return Card(
-                margin: const EdgeInsets.only(
-                  bottom: 12,
-                ),
-                child: ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: primaryOrange,
-                    child: Icon(
-                      Icons.home,
-                      color: Colors.white,
-                    ),
+        if (documents.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(30),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.event_available_outlined,
+                    size: 60,
+                    color: Colors.grey,
                   ),
-                  title: Text(
-                    title,
-                    style: const TextStyle(
+                  SizedBox(height: 15),
+                  Text(
+                    'No viewing requests yet.',
+                    style: TextStyle(
+                      fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  subtitle: Text(
-                    '$location\n'
-                    '$dateText • $time',
+                  SizedBox(height: 8),
+                  Text(
+                    'When you request a property viewing, it will appear here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: secondaryTextColor,
+                    ),
                   ),
-                  isThreeLine: true,
-                ),
-              );
-            },
+                ],
+              ),
+            ),
           );
-        },
-      ),
+        }
+
+        documents.sort((a, b) {
+          final aTime = a.data()['submittedAt'];
+          final bTime = b.data()['submittedAt'];
+
+          if (aTime is Timestamp &&
+              bTime is Timestamp) {
+            return bTime.compareTo(aTime);
+          }
+
+          return 0;
+        });
+
+        return ListView.builder(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            MediaQuery.of(context).padding.top + 16,
+            16,
+            16,
+          ),
+          itemCount: documents.length,
+          itemBuilder: (context, index) {
+            return _requestCard(
+              context,
+              documents[index],
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -7707,126 +8371,193 @@ class _PropertyProviderViewingsScreenState
   // ==========================================================
 
   Future<void> _rejectRequest(
-    BuildContext context,
-    String requestId,
-  ) async {
-    final reasonController =
-        TextEditingController();
+  BuildContext context,
+  String requestId,
+) async {
+  String selectedReason = 'Viewing time unavailable';
+  final additionalReasonController =
+      TextEditingController();
 
-    final shouldReject = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text(
-            'Reject Viewing Request',
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Please provide a reason for rejecting this request.',
+  final result = await showDialog<String>(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (
+          context,
+          setDialogState,
+        ) {
+          return AlertDialog(
+            title: const Text(
+              'Decline Viewing Request',
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Please select the reason for declining this viewing request.',
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedReason,
+                    decoration: const InputDecoration(
+                      labelText: 'Reason',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value:
+                            'Viewing time unavailable',
+                        child: Text(
+                          'Viewing time unavailable',
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value:
+                            'Property manager unavailable',
+                        child: Text(
+                          'Property manager unavailable',
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value:
+                            'Property unavailable on this date',
+                        child: Text(
+                          'Property unavailable on this date',
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Other',
+                        child: Text('Other'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+
+                      setDialogState(() {
+                        selectedReason = value;
+                      });
+                    },
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  TextField(
+                    controller:
+                        additionalReasonController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText:
+                          'Additional explanation (optional)',
+                      hintText:
+                          'Add more information for the tenant...',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 15),
-              TextField(
-                controller: reasonController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Reason',
-                  hintText:
-                      'e.g. The requested time is unavailable.',
-                  border: OutlineInputBorder(),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  if (selectedReason == 'Other' &&
+                      additionalReasonController.text
+                          .trim()
+                          .isEmpty) {
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Please provide a reason.',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+
+                  String finalReason =
+                      selectedReason;
+
+                  final additional =
+                      additionalReasonController
+                          .text
+                          .trim();
+
+                  if (additional.isNotEmpty) {
+                    finalReason =
+                        '$selectedReason — $additional';
+                  }
+
+                  Navigator.pop(
+                    dialogContext,
+                    finalReason,
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
                 ),
+                child: const Text('Decline Request'),
               ),
             ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(
-                  dialogContext,
-                  false,
-                );
-              },
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(
-                  dialogContext,
-                  true,
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Reject'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (shouldReject != true) {
-      reasonController.dispose();
-      return;
-    }
-
-    final reason =
-        reasonController.text.trim();
-
-    reasonController.dispose();
-
-    if (reason.isEmpty) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please provide a rejection reason.',
-          ),
-        ),
+          );
+        },
       );
+    },
+  );
 
-      return;
-    }
+  additionalReasonController.dispose();
 
-    try {
-      await FirebaseFirestore.instance
-          .collection('viewing_requests')
-          .doc(requestId)
-          .update({
-        'status': 'rejected',
-        'rejectedBy':
-            FirebaseAuth.instance.currentUser?.uid ?? '',
-        'rejectedAt':
-            FieldValue.serverTimestamp(),
-        'rejectionReason': reason,
-        'approvedAt': FieldValue.delete(),
-        'approvedBy': FieldValue.delete(),
-      });
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Viewing request rejected.',
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Could not reject this viewing request.',
-          ),
-        ),
-      );
-    }
+  if (result == null || result.trim().isEmpty) {
+    return;
   }
+
+  try {
+    await FirebaseFirestore.instance
+        .collection('viewing_requests')
+        .doc(requestId)
+        .update({
+      'status': 'rejected',
+      'rejectedBy':
+          FirebaseAuth.instance.currentUser?.uid ?? '',
+      'rejectedAt':
+          FieldValue.serverTimestamp(),
+      'rejectionReason': result.trim(),
+      'approvedAt': FieldValue.delete(),
+      'approvedBy': FieldValue.delete(),
+    });
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Viewing request declined.',
+        ),
+      ),
+    );
+  } catch (e) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Could not decline this viewing request.',
+        ),
+      ),
+    );
+  }
+}
 
   // ==========================================================
   // VIEWING REQUEST CARD
@@ -16460,6 +17191,25 @@ content: const Text(
           crossAxisAlignment:
               CrossAxisAlignment.start,
           children: [
+                        const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PropertyViewingScheduleScreen(
+                        propertyId: listing.id,
+                        propertyTitle: listing.title,
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.calendar_month_outlined),
+                label: const Text('Manage Viewing Schedule'),
+              ),
+            ),
             if (listing.photoPaths.isNotEmpty)
               GestureDetector(
                 onTap: () {
@@ -20941,5 +21691,443 @@ class AdminDashboardScreen extends StatelessWidget {
         ),
       );
     }
+  }
+}
+class PropertyViewingScheduleScreen extends StatefulWidget {
+  final String propertyId;
+  final String propertyTitle;
+
+  const PropertyViewingScheduleScreen({
+    super.key,
+    required this.propertyId,
+    required this.propertyTitle,
+  });
+
+  @override
+  State<PropertyViewingScheduleScreen> createState() =>
+      _PropertyViewingScheduleScreenState();
+}
+
+class _PropertyViewingScheduleScreenState
+    extends State<PropertyViewingScheduleScreen> {
+  bool isLoading = true;
+  bool isSaving = false;
+  bool hasAccess = false;
+
+  final List<String> dayKeys = [
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday',
+  ];
+
+  final List<String> dayNames = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+
+  final Map<String, Map<String, dynamic>> schedule = {};
+
+  @override
+  void initState() {
+    super.initState();
+
+    for (final day in dayKeys) {
+      schedule[day] = {
+        'enabled': false,
+        'start': '9:00 AM',
+        'end': '5:00 PM',
+      };
+    }
+
+    _loadSchedule();
+  }
+
+  Future<void> _loadSchedule() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
+      return;
+    }
+
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      final role = userDoc.data()?['role']
+          ?.toString()
+          .trim()
+          .toLowerCase();
+
+      final propertyDoc = await FirebaseFirestore.instance
+          .collection('properties')
+          .doc(widget.propertyId)
+          .get();
+
+      if (!propertyDoc.exists) {
+        if (mounted) {
+          setState(() => isLoading = false);
+        }
+        return;
+      }
+
+      final property = propertyDoc.data()!;
+
+      final ownerId = property['ownerId']?.toString() ?? '';
+      final managedById =
+          property['managedById']?.toString() ?? '';
+
+      final isAuthorizedLandlord =
+          role == 'landlord' && ownerId == user.uid;
+
+      final isAuthorizedAgent =
+          role == 'agent' && managedById == user.uid;
+
+      if (!isAuthorizedLandlord && !isAuthorizedAgent) {
+        if (mounted) {
+          setState(() => isLoading = false);
+        }
+        return;
+      }
+
+      final savedSchedule = property['viewingSchedule'];
+
+      if (savedSchedule is Map) {
+        for (final day in dayKeys) {
+          final savedDay = savedSchedule[day];
+
+          if (savedDay is Map) {
+            schedule[day] = {
+              'enabled': savedDay['enabled'] == true,
+              'start': savedDay['start']?.toString() ??
+                  '9:00 AM',
+              'end': savedDay['end']?.toString() ??
+                  '5:00 PM',
+            };
+          }
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        hasAccess = true;
+        isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() => isLoading = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not load the viewing schedule. Please try again.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _chooseTime(
+    String day,
+    String field,
+  ) async {
+    final currentValue = schedule[day]![field] as String;
+
+    final initialTime = _parseTime(currentValue);
+
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initialTime,
+      helpText: field == 'start'
+          ? 'Viewing start time'
+          : 'Viewing end time',
+    );
+
+    if (picked == null || !mounted) return;
+
+    setState(() {
+      schedule[day]![field] = picked.format(context);
+    });
+  }
+
+  TimeOfDay _parseTime(String value) {
+    try {
+      final parts = value.split(' ');
+      final timeParts = parts[0].split(':');
+
+      int hour = int.parse(timeParts[0]);
+      final minute = int.parse(timeParts[1]);
+
+      if (parts.length > 1) {
+        if (parts[1].toUpperCase() == 'PM' && hour != 12) {
+          hour += 12;
+        } else if (parts[1].toUpperCase() == 'AM' &&
+            hour == 12) {
+          hour = 0;
+        }
+      }
+
+      return TimeOfDay(hour: hour, minute: minute);
+    } catch (_) {
+      return const TimeOfDay(hour: 9, minute: 0);
+    }
+  }
+
+  Future<void> _saveSchedule() async {
+    if (!hasAccess || isSaving) return;
+
+    for (final day in dayKeys) {
+      final daySchedule = schedule[day]!;
+
+      if (daySchedule['enabled'] != true) continue;
+
+      final start = _parseTime(daySchedule['start'] as String);
+      final end = _parseTime(daySchedule['end'] as String);
+
+      final startMinutes = start.hour * 60 + start.minute;
+      final endMinutes = end.hour * 60 + end.minute;
+
+      if (endMinutes <= startMinutes) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${dayNames[dayKeys.indexOf(day)]}: end time must be later than start time.',
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
+    setState(() => isSaving = true);
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('properties')
+          .doc(widget.propertyId)
+          .update({
+        'viewingSchedule': schedule,
+        'viewingScheduleUpdatedAt': FieldValue.serverTimestamp(),
+        'viewingScheduleUpdatedBy':
+            FirebaseAuth.instance.currentUser?.uid ?? '',
+      });
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Viewing schedule saved successfully.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not save the schedule. Please try again.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => isSaving = false);
+      }
+    }
+  }
+
+  Widget _timeButton(
+    String day,
+    String field,
+    String label,
+  ) {
+    return Expanded(
+      child: OutlinedButton(
+        onPressed: () => _chooseTime(day, field),
+        child: Column(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                color: secondaryTextColor,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              schedule[day]![field] as String,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Viewing Schedule'),
+      ),
+      body: isLoading
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: primaryOrange,
+              ),
+            )
+          : !hasAccess
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'You are not authorized to manage this property’s viewing schedule.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : Column(
+                  children: [
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          Text(
+                            widget.propertyTitle,
+                            style: const TextStyle(
+                              fontSize: 21,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Choose the days and hours when tenants can request property viewings. All days are initially unavailable until you enable them.',
+                            style: TextStyle(
+                              color: secondaryTextColor,
+                              height: 1.4,
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          for (int i = 0; i < dayKeys.length; i++)
+                            Card(
+                              margin: const EdgeInsets.only(
+                                bottom: 10,
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  children: [
+                                    SwitchListTile(
+                                      contentPadding:
+                                          EdgeInsets.zero,
+                                      title: Text(
+                                        dayNames[i],
+                                        style: const TextStyle(
+                                          fontWeight:
+                                              FontWeight.bold,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        schedule[dayKeys[i]]![
+                                                    'enabled'] ==
+                                                true
+                                            ? 'Available for viewings'
+                                            : 'Unavailable',
+                                      ),
+                                      value: schedule[dayKeys[i]]![
+                                              'enabled'] ==
+                                          true,
+                                      activeThumbColor:
+                                          primaryOrange,
+                                      onChanged: (enabled) {
+                                        setState(() {
+                                          schedule[dayKeys[i]]![
+                                              'enabled'] = enabled;
+                                        });
+                                      },
+                                    ),
+                                    if (schedule[dayKeys[i]]![
+                                            'enabled'] ==
+                                        true) ...[
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          _timeButton(
+                                            dayKeys[i],
+                                            'start',
+                                            'Starts',
+                                          ),
+                                          const SizedBox(width: 10),
+                                          _timeButton(
+                                            dayKeys[i],
+                                            'end',
+                                            'Ends',
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: isSaving
+                                ? null
+                                : _saveSchedule,
+                            icon: isSaving
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.save_outlined),
+                            label: Text(
+                              isSaving
+                                  ? 'Saving...'
+                                  : 'Save Viewing Schedule',
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryOrange,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 15,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+    );
   }
 }
