@@ -46,3 +46,48 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# ==========================================
+# KejaFind Custom Additions (Security & Secrets)
+# ==========================================
+
+# Android Signing Keys (Do not upload to GitHub)
+*.jks
+*.keystore
+android/key.properties
+android/local.properties
+
+# iOS signing
+ios/*.mobileprovision
+ios/*.p12
+
+# Environment variables
+.env
+.env.*
+
+# Keep the firebase_options.dart safe if you add it to gitignore later,
+# but for now, it's fine to commit since it doesn't contain secret keys.
+# ==========================================
+# KejaFind Git Cleanup
+# ==========================================
+
+# Backups
+*.backup
+*.backup-*
+lib/*.backup
+
+# Audit / Log files
+audit-*.txt
+*.log
+
+# Node modules (if you ever use Firebase CLI or web tools)
+node_modules/
+package-lock.json
+package.json
+
+# Keep the storage rules, but ignore the backups
+storage.rules.backup*
+firestore.rules.backup*
+
+# Test temporary folders
+tests/

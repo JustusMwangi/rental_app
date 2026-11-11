@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "rentalapp-kenya"
-  }
+  },
+  "targets": {
+    "rentalapp-kenya": {
+      "storage": {
+        "main": [
+          "rentalapp-kenya.firebasestorage.app"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

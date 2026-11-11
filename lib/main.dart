@@ -11,6 +11,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/foundation.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,18 +20,39 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  // ------------------------------------------------------------
+  // LOCAL EMULATOR CONNECTION (DEBUG ONLY)
+  // ------------------------------------------------------------
+  //
+  // Points Auth, Firestore and Storage at the local Firebase
+  // Emulator Suite. This block only runs in debug builds, so
+  // release builds continue to use the real project.
+
+             if (kDebugMode) {
+    const String host = '127.0.0.1';
+
+    try {
+      await FirebaseAuth.instance.useAuthEmulator(host, 9099, automaticHostMapping: false);
+      FirebaseFirestore.instance.useFirestoreEmulator(host, 8080, automaticHostMapping: false);
+      FirebaseStorage.instance.useStorageEmulator(host, 9199, automaticHostMapping: false); // 👈 MUST BE THIS
+      debugPrint('Connected to Firebase emulators via adb reverse at $host');
+    } catch (e) {
+      debugPrint('Could not connect to emulators: $e');
+    }
+  }
   await AuthService.initialize();
 
   runApp(const RentalApp());
 }
 class AuthService {
-  static final FirebaseAuth _auth = FirebaseAuth.instance;
+   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
 
   static Future<void> initialize() async {
-    await _googleSignIn.initialize();
+    await _googleSignIn.initialize(
+      serverClientId: '1003821037899-s8obanblc95pinbrjjtu26mmt8j3lgpq.apps.googleusercontent.com',
+    );
   }
-
   static Stream<User?> get authStateChanges =>
       _auth.authStateChanges();
 
@@ -111,6 +133,7 @@ String selectedRole = 'tenant';
   // ============================================================
 
   Future<void> _submitEmailPassword() async {
+    debugPrint('=== BUTTON PRESSED: STARTING AUTH FLOW ===');
     final email = emailController.text.trim();
     final password = passwordController.text.trim();
 
@@ -205,19 +228,31 @@ String selectedRole = 'tenant';
         }
 
         // Save the selected role.
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .set({
-          'uid': user.uid,
-          'email': email,
-          'role': selectedRole,
-          'createdAt':
-              FieldValue.serverTimestamp(),
-        });
+        try {
+          debugPrint('Attempting to save user to Firestore...');
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .set({
+            'uid': user.uid,
+            'email': email,
+            'role': selectedRole,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+          debugPrint('Successfully saved user to Firestore!');
+        } catch (e) {
+          debugPrint('FIRESTORE SAVE ERROR: $e');
+          _showMessage('Failed to save profile: $e');
+          // We return here so we don't navigate away if it failed
+          return; 
+        }
 
-        // Send email verification.
-        await user.sendEmailVerification();
+        // Send email verification (wrapped in its own try/catch so it doesn't block)
+        try {
+          await user.sendEmailVerification();
+        } catch (e) {
+          debugPrint('Email verification error (can be ignored in emulator): $e');
+        }
 
         if (!mounted) return;
 
@@ -310,7 +345,7 @@ String selectedGoogleRole = 'tenant';
           ) {
             return AlertDialog(
               title: const Text(
-                'How will you use RentalApp?',
+                'How will you use KejaFind?',
               ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -820,37 +855,37 @@ String selectedGoogleRole = 'tenant';
             // HEADER
             // ==================================================
 
-            Container(
+              Container(
               padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
-                gradient:
-                    const LinearGradient(
+                gradient: const LinearGradient(
                   colors: [
                     primaryOrange,
                     darkOrange,
                   ],
                 ),
-                borderRadius:
-                    BorderRadius.circular(22),
+                borderRadius: BorderRadius.circular(22),
               ),
-              child: const Column(
+              child: Column(
                 children: [
-                  Icon(
-                    Icons.home_work,
-                    color: Colors.white,
-                    size: 55,
-                  ),
-                  SizedBox(height: 12),
-                  Text(
-                    'RentalApp',
+                  // Replace Icon with your logo image
+                    Image.asset(
+                      'assets/icons/logo_white.png', // <--- Updated path
+                      height: 55,
+                      width: 55,
+                      // color: Colors.white, // Leave this commented out if the graphic is already white
+                    ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'KejaFind',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  SizedBox(height: 5),
-                  Text(
+                  const SizedBox(height: 5),
+                  const Text(
                     'Find your next home',
                     style: TextStyle(
                       color: Colors.white70,
@@ -860,7 +895,6 @@ String selectedGoogleRole = 'tenant';
                 ],
               ),
             ),
-
             const SizedBox(height: 30),
 
             Text(
@@ -877,7 +911,7 @@ String selectedGoogleRole = 'tenant';
 
             Text(
               isLogin
-                  ? 'Login to continue using your RentalApp account.'
+                  ? 'Login to continue using your KejaFind account.'
                   : 'Create an account to save homes, manage listings and more.',
               style: const TextStyle(
                 color: secondaryTextColor,
@@ -892,7 +926,7 @@ String selectedGoogleRole = 'tenant';
 
 if (!isLogin) ...[
   const Text(
-    'How will you use RentalApp?',
+    'How will you use KejaFind?',
     style: TextStyle(
       fontSize: 17,
       fontWeight: FontWeight.bold,
@@ -1275,16 +1309,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         stream: AuthService.authStateChanges,
         builder: (context, snapshot) {
           final user = snapshot.data;
-          final isSignedIn = user != null;
 
-          if (!isSignedIn) {
+          if (user == null) {
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                _buildProfileHeader(user),
-
+                _buildProfileHeader(null),
                 const SizedBox(height: 20),
-
                 Card(
                   child: ListTile(
                     leading: const CircleAvatar(
@@ -1311,16 +1342,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                              const AuthScreen(),
+                          builder: (_) => const AuthScreen(),
                         ),
                       );
                     },
                   ),
                 ),
-
                 const SizedBox(height: 8),
-
                 _buildAboutCard(context),
               ],
             );
@@ -1337,17 +1365,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
               if (roleSnapshot.hasData &&
                   roleSnapshot.data!.exists) {
-                final data =
-                    roleSnapshot.data!.data();
-
+                final data = roleSnapshot.data!.data();
                 final savedRole = data?['role'];
 
                 if (savedRole == 'landlord' ||
-                  savedRole == 'tenant' ||
-                  savedRole == 'agent' ||
-                  savedRole == 'admin') {
-                role = savedRole;
-              }
+                    savedRole == 'tenant' ||
+                    savedRole == 'agent' ||
+                    savedRole == 'admin') {
+                  role = savedRole as String;
+                }
               }
 
               final isLandlord = role == 'landlord';
@@ -1377,8 +1403,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                       subtitle: Text(
-                        user.email ??
-                            'RentalApp account',
+                        user.email ?? 'KejaFind account',
                       ),
                       trailing: TextButton(
                         onPressed: () async {
@@ -1397,100 +1422,166 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       leading: CircleAvatar(
                         backgroundColor: primaryOrange,
                         child: Icon(
-                          isLandlord
-                              ? Icons.home_work
-                              : isAgent
-                                  ? Icons.business
-                                  : Icons.person,
+                          isAdmin
+                              ? Icons.admin_panel_settings
+                              : isLandlord
+                                  ? Icons.home_work
+                                  : isAgent
+                                      ? Icons.business
+                                      : Icons.person,
                           color: Colors.white,
                         ),
                       ),
                       title: Text(
-  isAdmin
-    ? 'Admin Account'
-    : isLandlord
-        ? 'Landlord Account'
-        : isAgent
-            ? 'Agent Account'
-            : 'Tenant Account',
-  style: const TextStyle(
-    fontWeight: FontWeight.bold,
-  ),
-),
-subtitle: Text(
-  isAdmin
-    ? 'Manage and verify RentalApp activities'
-    : isLandlord
-        ? 'Manage and rent out your properties'
-        : isAgent
-            ? 'Manage properties for owners'
-            : 'Find homes and manage your viewings',
-),
+                        isAdmin
+                            ? 'Admin Account'
+                            : isLandlord
+                                ? 'Landlord Account'
+                                : isAgent
+                                    ? 'Agent Account'
+                                    : 'Tenant Account',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      subtitle: Text(
+                        isAdmin
+                            ? 'Manage and verify KejaFind activities'
+                            : isLandlord
+                                ? 'Manage and rent out your properties'
+                                : isAgent
+                                    ? 'Manage properties for owners'
+                                    : 'Find homes and manage your viewings',
+                      ),
                     ),
                   ),
 
-                 const SizedBox(height: 12),
+                  const SizedBox(height: 12),
 
-// CONTACT DETAILS
-Card(
-  child: FutureBuilder<
-      DocumentSnapshot<Map<String, dynamic>>>(
-    future: FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .get(),
-    builder: (context, phoneSnapshot) {
-      String phone = '';
+                  // CONTACT DETAILS
+                  Card(
+                    child: FutureBuilder<
+                        DocumentSnapshot<Map<String, dynamic>>>(
+                      future: FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(user.uid)
+                          .get(),
+                      builder: (context, phoneSnapshot) {
+                        String phone = '';
 
-      if (phoneSnapshot.hasData &&
-          phoneSnapshot.data!.exists) {
-        final data =
-            phoneSnapshot.data!.data();
+                        if (phoneSnapshot.hasData &&
+                            phoneSnapshot.data!.exists) {
+                          final data =
+                              phoneSnapshot.data!.data();
+                          phone =
+                              data?['phone']?.toString() ?? '';
+                        }
 
-        phone = data?['phone']
-                ?.toString() ??
-            '';
-      }
+                        return ListTile(
+                          leading: const CircleAvatar(
+                            backgroundColor: primaryOrange,
+                            child: Icon(
+                              Icons.phone,
+                              color: Colors.white,
+                            ),
+                          ),
+                          title: const Text(
+                            'Phone Number',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          subtitle: Text(
+                            phone.isEmpty
+                                ? 'Add your phone number'
+                                : phone,
+                          ),
+                          trailing: const Icon(
+                            Icons.edit_outlined,
+                            size: 20,
+                          ),
+                          onTap: () {
+                            _editPhoneNumber(
+                              context,
+                              user,
+                              phone,
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
 
-      return ListTile(
-        leading: const CircleAvatar(
-          backgroundColor: primaryOrange,
-          child: Icon(
-            Icons.phone,
-            color: Colors.white,
-          ),
-        ),
-        title: const Text(
-          'Phone Number',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        subtitle: Text(
-          phone.isEmpty
-              ? 'Add your phone number'
-              : phone,
-        ),
-        trailing: const Icon(
-          Icons.edit_outlined,
-          size: 20,
-        ),
-        onTap: () {
-          _editPhoneNumber(
-            context,
-            user,
-            phone,
-          );
-        },
-      );
-    },
-  ),
-),
+                  const SizedBox(height: 12),
 
-const SizedBox(height: 12),
+                  // SAVED HOMES
+                  if (!isAdmin) ...[
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(
+                          Icons.favorite,
+                          color: primaryOrange,
+                        ),
+                        title: const Text(
+                          'Saved Homes',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'View homes you saved',
+                        ),
+                        trailing: const Icon(
+                          Icons.arrow_forward_ios,
+                          size: 18,
+                        ),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const SavedScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 8),
 
-// LANDLORD OPTIONS
+                    // VIEWING REQUESTS
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(
+                          Icons.calendar_month,
+                          color: primaryOrange,
+                        ),
+                        title: const Text(
+                          'My Viewings',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'Manage your property viewings',
+                        ),
+                        trailing: const Icon(
+                          Icons.arrow_forward_ios,
+                          size: 18,
+                        ),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ViewingsScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+
+                  // LANDLORD AND AGENT OPTIONS
                   if (isLandlord || isAgent) ...[
+                    const SizedBox(height: 8),
                     Card(
                       child: ListTile(
                         leading: const CircleAvatar(
@@ -1524,9 +1615,7 @@ const SizedBox(height: 12),
                         },
                       ),
                     ),
-
                     const SizedBox(height: 8),
-
                     Card(
                       child: ListTile(
                         leading: const CircleAvatar(
@@ -1543,7 +1632,7 @@ const SizedBox(height: 12),
                           ),
                         ),
                         subtitle: const Text(
-                          'Rent out your property on RentalApp',
+                          'Rent out your property on KejaFind',
                         ),
                         trailing: const Icon(
                           Icons.arrow_forward_ios,
@@ -1561,24 +1650,27 @@ const SizedBox(height: 12),
                       ),
                     ),
                   ],
-                  
 
-                  // TENANT OPTIONS
-                  if (!isLandlord && !isAgent && !isAdmin) ...[
+                  // ADMIN OPTIONS
+                  if (isAdmin) ...[
+                    const SizedBox(height: 8),
                     Card(
                       child: ListTile(
-                        leading: const Icon(
-                          Icons.favorite,
-                          color: primaryOrange,
+                        leading: const CircleAvatar(
+                          backgroundColor: darkOrange,
+                          child: Icon(
+                            Icons.admin_panel_settings_outlined,
+                            color: Colors.white,
+                          ),
                         ),
                         title: const Text(
-                          'Saved Homes',
+                          'Admin Dashboard',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         subtitle: const Text(
-                          'View homes you saved',
+                          'Review and manage property listings',
                         ),
                         trailing: const Icon(
                           Icons.arrow_forward_ios,
@@ -1589,29 +1681,30 @@ const SizedBox(height: 12),
                             context,
                             MaterialPageRoute(
                               builder: (_) =>
-                                  const SavedScreen(),
+                                  const AdminDashboardScreen(),
                             ),
                           );
                         },
                       ),
                     ),
-
                     const SizedBox(height: 8),
-
                     Card(
                       child: ListTile(
-                        leading: const Icon(
-                          Icons.calendar_month,
-                          color: primaryOrange,
+                        leading: const CircleAvatar(
+                          backgroundColor: primaryOrange,
+                          child: Icon(
+                            Icons.verified_outlined,
+                            color: Colors.white,
+                          ),
                         ),
                         title: const Text(
-                          'My Viewings',
+                          'Agent Verification',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         subtitle: const Text(
-                          'Manage your property viewings',
+                          'Review agent representation requests',
                         ),
                         trailing: const Icon(
                           Icons.arrow_forward_ios,
@@ -1622,7 +1715,7 @@ const SizedBox(height: 12),
                             context,
                             MaterialPageRoute(
                               builder: (_) =>
-                                  const ViewingsScreen(),
+                                  const AdminAgentVerificationScreen(),
                             ),
                           );
                         },
@@ -1631,84 +1724,6 @@ const SizedBox(height: 12),
                   ],
 
                   const SizedBox(height: 8),
-
-// ============================================================
-// ADMIN OPTIONS
-// ============================================================
-
-if (isAdmin) ...[
-  Card(
-    child: ListTile(
-      leading: const CircleAvatar(
-        backgroundColor: darkOrange,
-        child: Icon(
-          Icons.admin_panel_settings_outlined,
-          color: Colors.white,
-        ),
-      ),
-      title: const Text(
-        'Admin Dashboard',
-        style: TextStyle(
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      subtitle: const Text(
-        'Review and manage property listings',
-      ),
-      trailing: const Icon(
-        Icons.arrow_forward_ios,
-        size: 18,
-      ),
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                const AdminDashboardScreen(),
-          ),
-        );
-      },
-    ),
-  ),
-
-  const SizedBox(height: 8),
-
-  Card(
-    child: ListTile(
-      leading: const CircleAvatar(
-        backgroundColor: primaryOrange,
-        child: Icon(
-          Icons.verified_outlined,
-          color: Colors.white,
-        ),
-      ),
-      title: const Text(
-        'Agent Verification',
-        style: TextStyle(
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      subtitle: const Text(
-        'Review agent representation requests',
-      ),
-      trailing: const Icon(
-        Icons.arrow_forward_ios,
-        size: 18,
-      ),
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                const AdminAgentVerificationScreen(),
-          ),
-        );
-      },
-    ),
-  ),
-],
-                  const SizedBox(height: 8),
-
                   _buildAboutCard(context),
                 ],
               );
@@ -1792,7 +1807,7 @@ if (isAdmin) ...[
           color: primaryOrange,
         ),
         title: const Text(
-          'About RentalApp',
+          'About KejaFind',
         ),
         trailing: const Icon(
           Icons.arrow_forward_ios,
@@ -1801,7 +1816,7 @@ if (isAdmin) ...[
         onTap: () {
           showAboutDialog(
             context: context,
-            applicationName: 'RentalApp',
+            applicationName: 'KejaFind',
             applicationVersion: '1.0.0',
             applicationIcon: const Icon(
               Icons.home,
@@ -1810,7 +1825,7 @@ if (isAdmin) ...[
             ),
             children: const [
               Text(
-                'RentalApp helps tenants discover available homes online instead of walking around looking for houses.',
+                'KejaFind helps tenants discover available homes online instead of walking around looking for houses.',
               ),
             ],
           );
@@ -2146,14 +2161,266 @@ class _EmailVerificationScreenState
 // ============================================================
 // APP
 // ============================================================
+class KejaFindSplashScreen extends StatefulWidget {
+  const KejaFindSplashScreen({super.key});
 
+  @override
+  State<KejaFindSplashScreen> createState() =>
+      _KejaFindSplashScreenState();
+}
+
+class _KejaFindSplashScreenState
+    extends State<KejaFindSplashScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fade;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+
+    _fade = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOut,
+    );
+
+    _scale = Tween<double>(
+      begin: 0.88,
+      end: 1.0,
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+
+    _controller.forward();
+
+    // Welcome briefly, then open the existing Home screen.
+    Future.delayed(
+      const Duration(seconds: 8),
+      () {
+        if (!mounted) return;
+
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => const MainNavigationScreen(),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Widget _roleIcon(IconData icon, String title, String subtitle) {
+  return Expanded(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFFF3DFC9),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Icon(
+            icon,
+            color: primaryOrange,
+            size: 26,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF29231F),
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          subtitle,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w400,
+            color: Color(0xFF75675C),
+            height: 1.35,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+    @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      // Removed the solid background color
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('assets/icons/splash_background.png'),
+            fit: BoxFit.cover, // Makes the image fill the whole screen
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: FadeTransition(
+            opacity: _fade,
+            child: ScaleTransition(
+              scale: _scale,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 28,
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                                       // 1. The Logo (No background container, just the image)
+                                        // THE NEW LOGO CONTAINER
+                    Container(
+                      width: 130,
+                      height: 130,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white, // White box so the orange logo pops
+                        borderRadius: BorderRadius.circular(32),
+                        boxShadow: [
+                          BoxShadow(
+                            color: primaryOrange.withOpacity(0.25),
+                            blurRadius: 24,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      child: Image.asset(
+                        'assets/icons/logo_transparent.png', // Ensure you have this file
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+
+                    // 2. The App Name
+                    const Text(
+                      'KejaFind',
+                      style: TextStyle(
+                        fontSize: 36,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -1.2,
+                        color: Color(0xFF29231F),
+                      ),
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    // 3. The Tagline
+                    const Text(
+                      'Find a place to call home.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 17,
+                        color: Color(0xFF75675C),
+                      ),
+                    ),
+                    const SizedBox(height: 42),
+
+                    const Text(
+                      'YOUR NEXT CHAPTER STARTS HERE',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 2,
+                        color: Color(0xFF9B7655),
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                                                            Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _roleIcon(
+                          Icons.search_rounded,
+                          'Tenant',
+                          'Find a Home',
+                        ),
+                        _roleIcon(
+                          Icons.home_work_outlined,
+                          'Landlord',
+                          'List a Home',
+                        ),
+                        _roleIcon(
+                          Icons.handshake_outlined,
+                          'Agent',
+                          'Manage Homes',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 48),
+
+                    const SizedBox(
+                      width: 26,
+                      height: 26,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: primaryOrange,
+                      ),
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    const Text(
+                      'Making your next move easier',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF897D72),
+                      ),
+                    ),
+                  ],
+                                ), // Closes the Column
+              ), // Closes the Padding
+            ), // Closes the ScaleTransition
+          ), // Closes the FadeTransition
+        ), // Closes the Center
+      ), // Closes the SafeArea
+    ), // Closes the Container (The background image)
+  ); // Closes the Scaffold
+ }
+}
 class RentalApp extends StatelessWidget {
   const RentalApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'RentalApp',
+          return MaterialApp(
+      title: 'KejaFind',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -2167,7 +2434,7 @@ class RentalApp extends StatelessWidget {
           elevation: 0,
         ),
       ),
-      home: const MainNavigationScreen(),
+      home: const KejaFindSplashScreen(),
     );
   }
 }
@@ -2198,11 +2465,13 @@ final String ownerEmail;
 final String title;
 final String location;
   final String propertyType;
+  final String propertySetting;
   final int rent;
   final int bedrooms;
   final int bathrooms;
   final int size;
   final String availability;
+  final DateTime? availableFrom;
   final String description;
   final List<String> amenities;
   final List<String> photoPaths;
@@ -2218,11 +2487,14 @@ required this.ownerEmail,
 required this.title,
   required this.location,
     required this.propertyType,
+    this.propertySetting = '',
     required this.rent,
     required this.bedrooms,
     required this.bathrooms,
     required this.size,
     this.availability = 'Available now',
+    this.availableFrom,
+    
     required this.description,
     required this.amenities,
     required this.photoPaths,
@@ -2487,11 +2759,13 @@ class LandlordListing {
   final String title;
   final String location;
   final String propertyType;
+  final String propertySetting;
   final int rent;
   final int bedrooms;
   final int bathrooms;
   final int size;
   final String availability;
+  final DateTime? availableFrom;
   final String description;
   final List<String> amenities;
   final DateTime submittedAt;
@@ -2504,11 +2778,13 @@ class LandlordListing {
     required this.title,
     required this.location,
     required this.propertyType,
+    this.propertySetting = 'Apartment Block',
     required this.rent,
     required this.bedrooms,
     required this.bathrooms,
     required this.size,
     required this.availability,
+    this.availableFrom,
     required this.description,
     required this.amenities,
     required this.submittedAt,
@@ -2542,6 +2818,7 @@ RentalProperty rentalPropertyFromFirestore(
     location: data['location']?.toString() ?? '',
     propertyType:
         data['propertyType']?.toString() ?? 'Apartment',
+        propertySetting: data['propertySetting']?.toString() ?? '',
     rent: (data['rent'] as num?)?.toInt() ?? 0,
     bedrooms: (data['bedrooms'] as num?)?.toInt() ?? 0,
     bathrooms: (data['bathrooms'] as num?)?.toInt() ?? 0,
@@ -2550,6 +2827,9 @@ RentalProperty rentalPropertyFromFirestore(
     // Availability from Firestore.
     availability:
         data['availability']?.toString() ?? 'Available now',
+        availableFrom: data['availableFrom'] is Timestamp
+    ? (data['availableFrom'] as Timestamp).toDate()
+    : null,
 
     description:
         data['description']?.toString() ?? '',
@@ -2582,9 +2862,10 @@ class FirestoreRentalProperties extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
-          .collection('properties')
-          .where('status', isEqualTo: 'approved')
-          .snapshots(),
+      .collection('properties')
+      .where('status', isEqualTo: 'approved')
+      .where('verified', isEqualTo: true)
+      .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState ==
             ConnectionState.waiting) {
@@ -2622,7 +2903,12 @@ class FirestoreRentalProperties extends StatelessWidget {
 
         final filteredDocuments = documents.where((doc) {
           final data = doc.data();
+            final availability =
+                data['availability']?.toString() ?? 'Available now';
 
+            if (availability == 'Rented / Occupied') {
+              return false;
+            }
           final county =
               data['county']?.toString() ?? '';
           final city =
@@ -2736,7 +3022,7 @@ Widget build(BuildContext context) {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'RentalApp',
+            'KejaFind',
             style: TextStyle(
               fontWeight: FontWeight.bold,
             ),
@@ -3733,12 +4019,16 @@ class SearchResultsScreen extends StatelessWidget {
 
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
-            .collection('properties')
-            .where(
-              'status',
-              isEqualTo: 'approved',
-            )
-            .snapshots(),
+          .collection('properties')
+          .where(
+            'status',
+            isEqualTo: 'approved',
+          )
+          .where(
+            'verified',
+            isEqualTo: true,
+          )
+          .snapshots(),
 
         builder: (context, snapshot) {
           if (snapshot.connectionState ==
@@ -4354,7 +4644,64 @@ class PropertyCard extends StatelessWidget {
 
               ],
             ),
+// HORIZONTAL PHOTO THUMBNAILS
+            if (property.photoPaths.length > 1)
+              SizedBox(
+                height: 76,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  itemCount: property.photoPaths.length - 1,
+                  itemBuilder: (context, index) {
+                    final photoPath =
+                        property.photoPaths[index + 1];
 
+                    return Container(
+                      width: 76,
+                      margin: const EdgeInsets.only(
+                        right: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        color: Colors.grey.shade200,
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: photoPath.startsWith('http')
+                          ? Image.network(
+                              photoPath,
+                              fit: BoxFit.cover,
+                              errorBuilder: (
+                                context,
+                                error,
+                                stackTrace,
+                              ) {
+                                return const Icon(
+                                  Icons.broken_image,
+                                  color: Colors.grey,
+                                );
+                              },
+                            )
+                          : Image.file(
+                              File(photoPath),
+                              fit: BoxFit.cover,
+                              errorBuilder: (
+                                context,
+                                error,
+                                stackTrace,
+                              ) {
+                                return const Icon(
+                                  Icons.broken_image,
+                                  color: Colors.grey,
+                                );
+                              },
+                            ),
+                    );
+                  },
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.all(15),
               child: Column(
@@ -4371,48 +4718,93 @@ class PropertyCard extends StatelessWidget {
 
                   const SizedBox(height: 5),
 
+                                  Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_outlined,
+                      size: 16,
+                      color: secondaryTextColor,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        property.location,
+                        style: const TextStyle(
+                          color: secondaryTextColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 6),
+
+                // PROPERTY TYPE
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.home_work_outlined,
+                      size: 16,
+                      color: secondaryTextColor,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      property.propertyType,
+                      style: const TextStyle(
+                        color: secondaryTextColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                if (property.propertySetting.isNotEmpty) ...[
+                  const SizedBox(height: 6),
                   Row(
-  children: [
-    const Icon(
-      Icons.location_on_outlined,
-      size: 16,
-      color: secondaryTextColor,
-    ),
-    const SizedBox(width: 4),
-    Expanded(
-      child: Text(
-        property.location,
-        style: const TextStyle(
-          color: secondaryTextColor,
-        ),
-      ),
-    ),
-  ],
-),
-
-const SizedBox(height: 6),
-
-// PROPERTY TYPE
-Row(
-  children: [
-    const Icon(
-      Icons.home_work_outlined,
-      size: 16,
-      color: secondaryTextColor,
-    ),
-    const SizedBox(width: 4),
-    Text(
-      property.propertyType,
-      style: const TextStyle(
-        color: secondaryTextColor,
-        fontWeight: FontWeight.w600,
-      ),
-    ),
-  ],
-),
-
-const SizedBox(height: 10),
-
+                    children: [
+                      const Icon(
+                        Icons.location_city_outlined,
+                        size: 16,
+                        color: secondaryTextColor,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          property.propertySetting,
+                          style: const TextStyle(
+                            color: secondaryTextColor,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 10),
+                if (property.availableFrom != null &&
+                    (availability == 'Available this month' ||
+                        availability == 'Available next month')) ...[
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.event_available_outlined,
+                      size: 16,
+                      color: primaryOrange,
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        'Available from ${_formatAvailabilityDate(property.availableFrom!)}',
+                        style: const TextStyle(
+                          color: primaryOrange,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+              ],
                   Row(
                     children: [
                       _smallInfo(
@@ -4511,6 +4903,24 @@ const SizedBox(height: 10),
         return Icons.info_outline;
     }
   }
+  String _formatAvailabilityDate(DateTime date) {
+  const months = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  return '${date.day} ${months[date.month - 1]} ${date.year}';
+}
 
   Widget _smallInfo(
     IconData icon,
@@ -4792,7 +5202,52 @@ Container(
     ],
   ),
 ),
-
+if (property.propertySetting.isNotEmpty) ...[
+  const SizedBox(height: 12),
+  Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: Colors.orange.shade50,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(
+        color: Colors.orange.shade100,
+      ),
+    ),
+    child: Row(
+      children: [
+        const Icon(
+          Icons.location_city_outlined,
+          color: primaryOrange,
+          size: 24,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Property Setting',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: secondaryTextColor,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                property.propertySetting,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  ),
+],
 const SizedBox(height: 20),
 
 // ============================================================
@@ -4852,7 +5307,19 @@ Container(
     ],
   ),
 ),
-
+if (property.availableFrom != null &&
+                (property.availability == 'Available this month' ||
+                    property.availability == 'Available next month')) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Available from ${_formatAvailabilityDate(property.availableFrom!)}',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: _availabilityColor(property.availability),
+                ),
+              ),
+            ],
 const SizedBox(height: 24),
 
 // PROPERTY FEATURES
@@ -4984,6 +5451,24 @@ Row(
       ),
     );
   }
+  String _formatAvailabilityDate(DateTime date) {
+  const months = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  return '${date.day} ${months[date.month - 1]} ${date.year}';
+}
   Color _availabilityColor(String availability) {
   switch (availability) {
     case 'Available now':
@@ -6673,105 +7158,6 @@ void _showCallDialog(
       );
     },
   );
-  // ============================================================
-// OPEN EMAIL
-// ============================================================
-
-Future<void> _openEmail(
-  BuildContext context,
-  String emailAddress,
-  String propertyTitle,
-) async {
-  final email = emailAddress.trim();
-
-  // ----------------------------------------------------------
-  // EMAIL NOT AVAILABLE
-  // ----------------------------------------------------------
-
-  if (email.isEmpty ||
-      email == 'Email contact will be connected next.') {
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: const Row(
-            children: [
-              Icon(
-                Icons.email_outlined,
-                color: primaryOrange,
-              ),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Email Contact',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          content: const Text(
-            'The property manager has not provided an email address.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-              },
-              child: const Text('Close'),
-            ),
-          ],
-        );
-      },
-    );
-
-    return;
-  }
-
-  // ----------------------------------------------------------
-  // EMAIL MESSAGE
-  // ----------------------------------------------------------
-
-  final subject =
-      'RentalApp Property Enquiry - $propertyTitle';
-
-  final body =
-      'Hello,\n\n'
-      'I am interested in viewing '
-      '$propertyTitle on RentalApp.\n\n'
-      'Please let me know when I can arrange a viewing.\n\n'
-      'Thank you.';
-
-  final uri = Uri(
-    scheme: 'mailto',
-    path: email,
-    queryParameters: {
-      'subject': subject,
-      'body': body,
-    },
-  );
-
-  try {
-    await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
-  } catch (e) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-  const SnackBar(
-    content: Text(
-      'Unable to open email.',
-    ),
-  ),
-);
-    }
-  }
-}
 }
 // ============================================================
 // VIEWING REQUEST
@@ -6821,7 +7207,7 @@ class _ViewingRequestScreenState
     _loadViewingSchedule();
   }
 
-  Future<void> _loadViewingSchedule() async {
+    Future<void> _loadViewingSchedule() async {
     try {
       final doc = await FirebaseFirestore.instance
           .collection('properties')
@@ -6834,11 +7220,15 @@ class _ViewingRequestScreenState
 
       final rawSchedule = doc.data()!['viewingSchedule'];
 
-      if (rawSchedule is! Map) {
+      // 👇 THIS IS THE FIX: If the schedule doesn't exist or is empty,
+      // it is NOT a network error. It just means the landlord hasn't
+      // set it up yet. We set _scheduleLoadFailed to false.
+      if (rawSchedule is! Map || rawSchedule.isEmpty) {
         if (!mounted) return;
         setState(() {
           _scheduleLoading = false;
-          _scheduleLoadFailed = true;
+          _scheduleLoadFailed = false; 
+          _viewingSchedule = {};
         });
         return;
       }
@@ -7278,20 +7668,26 @@ await FirebaseFirestore.instance
                 padding: EdgeInsets.only(bottom: 16),
                 child: LinearProgressIndicator(),
               )
-            else if (_scheduleLoadFailed)
+                                    else if (_scheduleLoadFailed)
               const Padding(
                 padding: EdgeInsets.only(bottom: 16),
                 child: Text(
-                  'Viewing availability could not be loaded. '
-                  'Please try again later.',
+                  'Could not connect to the server to load the schedule.',
                   style: TextStyle(color: Colors.red),
                 ),
               )
             else if (_viewingSchedule.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 16),
-                child: Text(
-                  'This property has no viewing schedule configured yet.',
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: const Text(
+                  'This property manager has not set up viewing times yet. Please contact them directly to arrange a viewing.',
+                  style: TextStyle(color: Colors.orange),
                 ),
               ),
           Text(
@@ -7330,41 +7726,42 @@ await FirebaseFirestore.instance
             ),
           ),
           const SizedBox(height: 14),
-          ListTile(
+                    ListTile(
+            enabled: _viewingSchedule.isNotEmpty,
             contentPadding: EdgeInsets.zero,
             shape: RoundedRectangleBorder(
               side: BorderSide(
                 color: Colors.grey.shade300,
               ),
-              borderRadius:
-                  BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(10),
             ),
-            leading: const Icon(
+            leading: Icon(
               Icons.calendar_month,
-              color: primaryOrange,
+              color: _viewingSchedule.isNotEmpty ? primaryOrange : Colors.grey,
             ),
             title: Text(
               selectedDate == null
                   ? 'Select viewing date *'
                   : '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}',
+              style: TextStyle(
+                color: _viewingSchedule.isNotEmpty ? null : Colors.grey,
+              ),
             ),
-            trailing:
-                const Icon(Icons.chevron_right),
-            onTap: chooseDate,
+            trailing: Icon(
+              Icons.chevron_right,
+              color: _viewingSchedule.isNotEmpty ? null : Colors.grey,
+            ),
+            onTap: _viewingSchedule.isNotEmpty ? chooseDate : null,
           ),
           const SizedBox(height: 14),
-          DropdownButtonFormField<String>(
+                    DropdownButtonFormField<String>(
             initialValue: selectedTime,
-            decoration:
-                const InputDecoration(
-              labelText:
-                  'Preferred time *',
-              prefixIcon:
-                  Icon(Icons.access_time),
-              border:
-                  OutlineInputBorder(),
+            decoration: const InputDecoration(
+              labelText: 'Preferred time *',
+              prefixIcon: Icon(Icons.access_time),
+              border: OutlineInputBorder(),
             ),
-            items: (selectedDate == null
+            items: (selectedDate == null || _viewingSchedule.isEmpty
                 ? <String>[]
                 : _availableTimesForDate(selectedDate!))
             .map(
@@ -7372,13 +7769,14 @@ await FirebaseFirestore.instance
                 value: time,
                 child: Text(time),
               ),
-            )
-    .toList(),
-            onChanged: (value) {
-              setState(() {
-                selectedTime = value;
-              });
-            },
+            ).toList(),
+            onChanged: _viewingSchedule.isEmpty
+                ? null // 👈 Disables the dropdown if no schedule
+                : (value) {
+                    setState(() {
+                      selectedTime = value;
+                    });
+                  },
           ),
           const SizedBox(height: 14),
           TextField(
@@ -9367,13 +9765,17 @@ class _SavedScreenState extends State<SavedScreen> {
             key: ValueKey(
               'saved_homes_$tenantId',
             ),
-            stream: FirebaseFirestore.instance
-                .collection('properties')
-                .where(
-                  'status',
-                  isEqualTo: 'approved',
-                )
-                .snapshots(),
+           stream: FirebaseFirestore.instance
+            .collection('properties')
+            .where(
+              'status',
+              isEqualTo: 'approved',
+            )
+            .where(
+              'verified',
+              isEqualTo: true,
+            )
+            .snapshots(),
             builder: (
               context,
               snapshot,
@@ -9681,7 +10083,7 @@ bool isAgent = false;
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'List, manage and keep track of rental properties on RentalApp.',
+                  'List, manage and keep track of rental properties on KejaFind.',
                   style: TextStyle(
                     color: Colors.white70,
                   ),
@@ -9854,9 +10256,11 @@ final ownerPhoneController = TextEditingController();
 final ownerEmailController = TextEditingController();
 
   String selectedPropertyType = 'Apartment';
+  String selectedPropertySetting = 'Apartment Block';
   String selectedBedrooms = 'Bedsitter';
   String selectedBathrooms = '1';
   String selectedAvailability = 'Available now';
+   DateTime? selectedAvailableFrom;
 
   final Set<String> selectedAmenities = {};
 
@@ -9902,6 +10306,13 @@ String uploadingCategory = '';
   'Gated Community',
   'Serviced Apartment',
   'Studio / Bedsitter',
+  'Other',
+];
+final List<String> propertySettingOptions = [
+  'Apartment Block',
+  'Standalone / Own Compound',
+  'Gated Community',
+  'Shared Compound',
   'Other',
 ];
 
@@ -10376,6 +10787,7 @@ Future<void> addPhotosToCategory(String category) async {
       final metadata = SettableMetadata(
         contentType: photo.mimeType ?? 'image/jpeg',
       );
+        debugPrint('--- BYTES READ, STARTING NETWORK UPLOAD ---');
 
       final uploadTask = storageRef.putData(
         bytes,
@@ -11020,87 +11432,136 @@ void _showLandlordLocationPicker({
   if (selectedBathrooms == '4+') {
     bathrooms = 4;
   }
-// ============================================================
-    // VALIDATE OWNER DETAILS FOR AGENT LISTINGS
-    // ============================================================
 
-    if (isAgent && listingForOwner) {
-      if (ownerNameController.text.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Please enter the property owner\'s full name.',
-            ),
+  // ============================================================
+  // VALIDATE OWNER DETAILS FOR AGENT LISTINGS
+  // ============================================================
+
+  if (isAgent && listingForOwner) {
+    if (ownerNameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please enter the property owner\'s full name.',
           ),
-        );
-        return;
-      }
-
-      // Validate Kenyan owner phone number.
-final ownerPhone =
-    ownerPhoneController.text.trim().replaceAll(' ', '');
-
-final kenyaPhoneRegex = RegExp(
-  r'^(?:07\d{8}|01\d{8}|\+2547\d{8}|\+2541\d{8})$',
-);
-
-if (!kenyaPhoneRegex.hasMatch(ownerPhone)) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text(
-        'Please enter a valid Kenyan phone number.',
-      ),
-    ),
-  );
-  return;
-}
-// Validate owner email.
-  final ownerEmail =
-      ownerEmailController.text.trim();
-
-  if (ownerEmail.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Please enter the property owner\'s email address.',
         ),
-      ),
-    );
-    return;
-  }
-
-  final emailRegex = RegExp(
-    r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
-  );
-
-  if (!emailRegex.hasMatch(ownerEmail)) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Please enter a valid owner email address.',
-        ),
-      ),
-    );
-    return;
-  }
+      );
+      return;
     }
+
+    // Validate Kenyan owner phone number.
+    final ownerPhone =
+        ownerPhoneController.text.trim().replaceAll(' ', '');
+
+    final kenyaPhoneRegex = RegExp(
+      r'^(?:07\d{8}|01\d{8}|\+2547\d{8}|\+2541\d{8})$',
+    );
+
+    if (!kenyaPhoneRegex.hasMatch(ownerPhone)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please enter a valid Kenyan phone number.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    // Validate owner email.
+    final ownerEmail =
+        ownerEmailController.text.trim();
+
+    if (ownerEmail.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please enter the property owner\'s email address.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final emailRegex = RegExp(
+      r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+    );
+
+    if (!emailRegex.hasMatch(ownerEmail)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please enter a valid owner email address.',
+          ),
+        ),
+      );
+      return;
+    }
+  }
+
+  // ============================================================
+  // RESOLVE THE EFFECTIVE OWNER UID
+  // ============================================================
+  //
+  // When an agent lists a property on behalf of an owner, the
+  // 'ownerId' stored on the property document must be the
+  // OWNER'S uid — not the agent's uid. This is required by the
+  // Firestore security rules, which forbid changing 'ownerId'
+  // after the document is created.
+  //
+  // We look up the owner's RentalApp account by email. If no
+  // account exists yet, we fall back to the agent's uid and the
+  // owner-representation request remains pending. The admin can
+  // then complete verification once the owner registers.
+
+    // ============================================================
+  // RESOLVE THE EFFECTIVE OWNER UID
+  // ============================================================
+
+  String? resolvedOwnerUid;
+
+  if (isAgent && listingForOwner) {
+    final ownerEmailLookup =
+        ownerEmailController.text.trim().toLowerCase();
+
+    final ownerQuery = await FirebaseFirestore.instance
+        .collection('users')
+        .where('email', isEqualTo: ownerEmailLookup)
+        .where('role', isEqualTo: 'landlord')
+        .limit(1)
+        .get();
+
+    if (ownerQuery.docs.isNotEmpty) {
+      resolvedOwnerUid = ownerQuery.docs.first.id;
+    }
+  }
+
+  // If the owner is registered, use their UID.
+  // If they aren't, use the Agent's UID as a temporary placeholder.
+  final effectiveOwnerId =
+      (isAgent && listingForOwner && resolvedOwnerUid != null)
+          ? resolvedOwnerUid
+          : FirebaseAuth.instance.currentUser!.uid;
+
   final listingId =
       DateTime.now().millisecondsSinceEpoch.toString();
 
   final submittedAt = DateTime.now();
 
   final listing = LandlordListing(
-  id: listingId,
-  ownerId: FirebaseAuth.instance.currentUser!.uid,
-  managedById: FirebaseAuth.instance.currentUser!.uid,
-  title: titleController.text.trim(),
+    id: listingId,
+    ownerId: effectiveOwnerId,
+    managedById: FirebaseAuth.instance.currentUser!.uid,
+    title: titleController.text.trim(),
     location: '$selectedArea, $selectedCity',
     propertyType: selectedPropertyType,
+    propertySetting: selectedPropertySetting,
     rent: rent,
     bedrooms: bedrooms,
     bathrooms: bathrooms,
     size: size,
     availability: selectedAvailability,
+    availableFrom: selectedAvailableFrom,
     description: descriptionController.text.trim(),
     amenities: selectedAmenities.toList(),
     submittedAt: submittedAt,
@@ -11113,126 +11574,111 @@ if (!kenyaPhoneRegex.hasMatch(ownerPhone)) {
   });
 
   try {
+    debugPrint('--- UPLOAD FUNCTION STARTED ---');
+
     // Upload all selected photos to Firebase Storage.
     final List<String> photoDownloadUrls =
         await uploadPropertyPhotos(listing.id);
 
+    debugPrint('--- PHOTO UPLOAD COMPLETE, SAVING PROPERTY ---');
+
     // Save property information and Firebase Storage URLs
     // to Firestore.
-    await FirebaseFirestore.instance
-        .collection('properties')
-        .doc(listing.id)
-        .set({
-      'id': listing.id,
-      'ownerId': listing.ownerId,
+    try {
+      await FirebaseFirestore.instance
+          .collection('properties')
+          .doc(listing.id)
+          .set({
+        'id': listing.id,
+        'ownerId': effectiveOwnerId,
+        'ownerType': (isAgent && listingForOwner && resolvedOwnerUid != null)
+            ? 'landlord'
+            : currentUserRole,
+        'managedById': FirebaseAuth.instance.currentUser!.uid,
+        'managedByType': currentUserRole,
+        'listingForOwner': listingForOwner,
+        'representationStatus': listingForOwner
+            ? 'owner_contact_pending'
+            : 'self_managed',
+        'ownerApprovalStatus': listingForOwner
+            ? 'pending'
+            : 'not_required',
+        'ownerName': listingForOwner ? ownerNameController.text.trim() : '',
+        'ownerPhone': listingForOwner ? ownerPhoneController.text.trim() : '',
+        'ownerEmail': listingForOwner ? ownerEmailController.text.trim() : '',
+        'ownerRegistered': resolvedOwnerUid != null,
+        'title': listing.title,
+        'location': listing.location,
+        'propertyType': listing.propertyType,
+        'propertySetting': selectedPropertySetting,
+        'county': selectedCounty,
+        'city': selectedCity,
+        'area': selectedArea,
+        'rent': listing.rent,
+        'bedrooms': listing.bedrooms,
+        'bathrooms': listing.bathrooms,
+        'size': listing.size,
+        'availability': listing.availability,
+        'availableFrom': listing.availableFrom != null
+            ? Timestamp.fromDate(listing.availableFrom!)
+            : null,
+        'description': listing.description,
+        'amenities': listing.amenities,
+        'photoPaths': photoDownloadUrls,
+        'submittedAt': Timestamp.fromDate(listing.submittedAt),
+        'status': 'pending',
+        'verified': false,
+      });
+      debugPrint('--- PROPERTY DOCUMENT SAVED ---');
+    } on FirebaseException catch (e) {
+      debugPrint('--- PROPERTY SAVE FAILED: ${e.code} ---');
+      debugPrint('MESSAGE: ${e.message}');
+      rethrow;
+    }
 
-// Property provider relationship.
-'ownerType': currentUserRole,
-'managedById': FirebaseAuth.instance.currentUser!.uid,
-'managedByType': currentUserRole,
-'listingForOwner': listingForOwner,
-'representationStatus': listingForOwner
-    ? 'owner_contact_pending'
-    : 'self_managed',
+    // ============================================================
+    // CREATE OWNER REPRESENTATION REQUEST
+    // ============================================================
 
-// Owner approval status.
-// Agent listings for another owner will require
-// owner confirmation in the future.
-'ownerApprovalStatus': listingForOwner
-    ? 'pending'
-    : 'not_required',
+    if (isAgent && listingForOwner) {
+      final requestId =
+          FirebaseFirestore.instance
+              .collection('ownerRequests')
+              .doc()
+              .id;
 
-// Owner details for agent listings.
-'ownerName': listingForOwner
-    ? ownerNameController.text.trim()
-    : '',
-'ownerPhone': listingForOwner
-    ? ownerPhoneController.text.trim()
-    : '',
-'ownerEmail': listingForOwner
-    ? ownerEmailController.text.trim()
-    : '',
-      'title': listing.title,
-      'location': listing.location,
-      'propertyType': listing.propertyType,
-      'county': selectedCounty,
-      'city': selectedCity,
-      'area': selectedArea,
-      'rent': listing.rent,
-      'bedrooms': listing.bedrooms,
-      'bathrooms': listing.bathrooms,
-      'size': listing.size,
-      'availability': listing.availability,
-      'description': listing.description,
-      'amenities': listing.amenities,
+      final ownerEmail =
+          ownerEmailController.text.trim().toLowerCase();
 
-      // Firebase Storage download URLs.
-      'photoPaths': photoDownloadUrls,
+      try {
+        await FirebaseFirestore.instance
+            .collection('ownerRequests')
+            .doc(requestId)
+            .set({
+          'id': requestId,
+          'propertyId': listing.id,
+          'agentId': FirebaseAuth.instance.currentUser!.uid,
+          // Use empty string instead of null so the rule accepts it
+          'ownerUid': resolvedOwnerUid ?? '',
+          'ownerName': ownerNameController.text.trim(),
+          'ownerPhone': ownerPhoneController.text.trim(),
+          'ownerEmail': ownerEmail,
+          'status': 'pending',
+          'adminApprovalStatus': 'pending',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        debugPrint('--- OWNER REQUEST CREATED ---');
+      } on FirebaseException catch (e) {
+        debugPrint('--- OWNER REQUEST FAILED: ${e.code} ---');
+        debugPrint('MESSAGE: ${e.message}');
+        rethrow;
+      }
+    }
 
-      'submittedAt':
-          Timestamp.fromDate(listing.submittedAt),
-      'status': 'pending',
-      'verified': false,
-    });
-// ============================================================
-// CREATE OWNER REPRESENTATION REQUEST
-// ============================================================
-
-if (isAgent && listingForOwner) {
-  final requestId =
-      FirebaseFirestore.instance
-          .collection('ownerRequests')
-          .doc()
-          .id;
-
-  final ownerEmail =
-      ownerEmailController.text.trim().toLowerCase();
-
-  // Check whether the owner already has a RentalApp account.
-  String? ownerUid;
-
-  final ownerQuery = await FirebaseFirestore.instance
-      .collection('users')
-      .where(
-        'email',
-        isEqualTo: ownerEmail,
-      )
-      .limit(1)
-      .get();
-
-  if (ownerQuery.docs.isNotEmpty) {
-    ownerUid = ownerQuery.docs.first.id;
-  }
-
-  await FirebaseFirestore.instance
-      .collection('ownerRequests')
-      .doc(requestId)
-      .set({
-    'id': requestId,
-    'propertyId': listing.id,
-    'agentId':
-        FirebaseAuth.instance.currentUser!.uid,
-
-    'ownerUid': ownerUid,
-
-    'ownerName':
-        ownerNameController.text.trim(),
-    'ownerPhone':
-        ownerPhoneController.text.trim(),
-    'ownerEmail': ownerEmail,
-
-    'status': 'pending',
-
-    'createdAt':
-        FieldValue.serverTimestamp(),
-  });
-}
     setState(() {
       isSubmitting = false;
     });
 
-    // Keep the local listing so the existing landlord
-    // submission screen continues to work.
     LandlordListings.add(listing);
 
     if (!mounted) return;
@@ -11265,14 +11711,14 @@ if (isAgent && listingForOwner) {
         content: Text(
           'Could not save property. Please try again.\n$e',
         ),
-        duration: const Duration(seconds: 5),
+                duration: const Duration(seconds: 5),
       ),
     );
   }
 }
 
- @override
-Widget build(BuildContext context) {
+  @override
+  Widget build(BuildContext context) {
   return Scaffold(
     backgroundColor: const Color(0xFFFAFAFA),
     appBar: AppBar(
@@ -11644,6 +12090,53 @@ const Text(
                   ),
 
                   const SizedBox(height: 18),
+                  const Text(
+                      'Property setting',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: secondaryTextColor,
+                      ),
+                    ),
+
+                    const SizedBox(height: 7),
+
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedPropertySetting,
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(
+                          Icons.location_city_outlined,
+                          color: primaryOrange,
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFFFFF8F2),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(
+                            color: primaryOrange.withOpacity(0.10),
+                          ),
+                        ),
+                      ),
+                      items: propertySettingOptions.map(
+                        (setting) => DropdownMenuItem<String>(
+                          value: setting,
+                          child: Text(setting),
+                        ),
+                      ).toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            selectedPropertySetting = value;
+                          });
+                        }
+                      },
+                    ),
+
+                    const SizedBox(height: 18),
 
                   // LOCATION
                   _buildLandlordLocationSelector(),
@@ -11878,7 +12371,7 @@ const Text(
 
                   const SizedBox(height: 7),
 
-                  DropdownButtonFormField<String>(
+                    DropdownButtonFormField<String>(
                     initialValue: selectedAvailability,
                     decoration: InputDecoration(
                       prefixIcon: const Icon(
@@ -11907,13 +12400,68 @@ const Text(
                         )
                         .toList(),
                     onChanged: (value) {
-                      if (value != null) {
-                        setState(() {
-                          selectedAvailability = value;
-                        });
-                      }
+                      if (value == null) return;
+                      setState(() {
+                        selectedAvailability = value;
+
+                        // Clear the date when the new value
+                        // doesn't need one.
+                        if (value != 'Available this month' &&
+                            value != 'Available next month') {
+                          selectedAvailableFrom = null;
+                        }
+                      });
                     },
                   ),
+
+                  // NEW — show the date picker only when
+                  // availability = "this month" or "next month".
+                  if (selectedAvailability ==
+                          'Available this month' ||
+                      selectedAvailability ==
+                          'Available next month') ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final pickedDate = await showDatePicker(
+                            context: context,
+                            initialDate: selectedAvailableFrom ??
+                                DateTime.now()
+                                    .add(const Duration(days: 1)),
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime.now()
+                                .add(const Duration(days: 365)),
+                          );
+
+                          if (pickedDate != null) {
+                            setState(() {
+                              selectedAvailableFrom = pickedDate;
+                            });
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_month),
+                        label: Text(
+                          selectedAvailableFrom == null
+                              ? 'Choose expected availability date *'
+                              : 'Available from: '
+                                  '${selectedAvailableFrom!.day}/'
+                                  '${selectedAvailableFrom!.month}/'
+                                  '${selectedAvailableFrom!.year}',
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: primaryOrange,
+                          side: const BorderSide(color: primaryOrange),
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
 
                   const SizedBox(height: 22),
 
@@ -12350,8 +12898,9 @@ const Text(
             ),
           ],
         ),
+        
 
-        // ==================================================
+              // ==================================================
         // REAL UPLOAD PROGRESS OVERLAY
         // ==================================================
 
@@ -12361,9 +12910,7 @@ const Text(
               color: Colors.black54,
               child: Center(
                 child: Container(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                  ),
+                  margin: const EdgeInsets.symmetric(horizontal: 24),
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -12372,79 +12919,21 @@ const Text(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-
-                      const Icon(
-                        Icons.cloud_upload_outlined,
-                        color: primaryOrange,
-                        size: 48,
-                      ),
-
+                      const Icon(Icons.cloud_upload_outlined, color: primaryOrange, size: 48),
                       const SizedBox(height: 14),
-
-                      const Text(
-                        'Uploading property photos',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: textColor,
-                        ),
-                      ),
-
+                      const Text('Uploading property photos', textAlign: TextAlign.center, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: textColor)),
                       const SizedBox(height: 22),
-
-                      LinearProgressIndicator(
-                        value: uploadProgress,
-                        minHeight: 10,
-                        borderRadius: BorderRadius.circular(10),
-                        color: primaryOrange,
-                        backgroundColor: Colors.grey.shade200,
-                      ),
-
+                      LinearProgressIndicator(value: uploadProgress, minHeight: 10, borderRadius: BorderRadius.circular(10), color: primaryOrange, backgroundColor: Colors.grey.shade200),
                       const SizedBox(height: 14),
-
-                      Text(
-                        '${(uploadProgress * 100).toInt()}%',
-                        style: const TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: primaryOrange,
-                        ),
-                      ),
-
+                      Text('${(uploadProgress * 100).toInt()}%', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: primaryOrange)),
                       const SizedBox(height: 6),
-
-                      Text(
-                        '$uploadedPhotoCount of $totalPhotoCount photos uploaded',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: secondaryTextColor,
-                          fontSize: 15,
-                        ),
-                      ),
-
+                      Text('$uploadedPhotoCount of $totalPhotoCount photos uploaded', textAlign: TextAlign.center, style: const TextStyle(color: secondaryTextColor, fontSize: 15)),
                       if (uploadingCategory.isNotEmpty) ...[
                         const SizedBox(height: 6),
-                        Text(
-                          'Uploading: $uploadingCategory',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: secondaryTextColor,
-                            fontSize: 14,
-                          ),
-                        ),
+                        Text('Uploading: $uploadingCategory', textAlign: TextAlign.center, style: const TextStyle(color: secondaryTextColor, fontSize: 14)),
                       ],
-
                       const SizedBox(height: 18),
-
-                      const Text(
-                        'Please keep the app open until the upload is complete.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: 13,
-                        ),
-                      ),
+                      const Text('Please keep the app open until the upload is complete.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 13)),
                     ],
                   ),
                 ),
@@ -12455,7 +12944,6 @@ const Text(
     ),
   );
 }
-
 
 Widget _buildDetailDropdown({
   required String label,
@@ -12468,63 +12956,27 @@ Widget _buildDetailDropdown({
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(
-        label,
-        style: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: secondaryTextColor,
-        ),
-      ),
+      Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: secondaryTextColor)),
       const SizedBox(height: 7),
       DropdownButtonFormField<String>(
         initialValue: value,
         isExpanded: true,
         decoration: InputDecoration(
-          prefixIcon: Icon(
-            icon,
-            color: primaryOrange,
-          ),
+          prefixIcon: Icon(icon, color: primaryOrange),
           filled: true,
           fillColor: const Color(0xFFFFF8F2),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide(
-              color: primaryOrange.withOpacity(0.10),
-            ),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: primaryOrange.withOpacity(0.10))),
         ),
-        items: items
-            .map(
-              (item) => DropdownMenuItem<String>(
-                value: item,
-                child: Text(
-                  displayValue(item),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            )
-            .toList(),
+        items: items.map((item) => DropdownMenuItem<String>(value: item, child: Text(displayValue(item), overflow: TextOverflow.ellipsis))).toList(),
         onChanged: onChanged,
       ),
     ],
   );
 }
-  Widget _buildPhotoSection() {
-  final categories = <String>[
-    'Front View',
-    'Living Room',
-    'Bedroom',
-    'Shower Area',
-    'Kitchen',
-    'Balcony',
-    'Parking Area',
-  ];
 
+Widget _buildPhotoSection() {
+  final categories = <String>['Front View', 'Living Room', 'Bedroom', 'Shower Area', 'Kitchen', 'Balcony', 'Parking Area'];
   final categoryIcons = <String, IconData>{
     'Front View': Icons.home_outlined,
     'Living Room': Icons.weekend_outlined,
@@ -12535,20 +12987,12 @@ Widget _buildDetailDropdown({
     'Parking Area': Icons.local_parking_outlined,
   };
 
-  int activeIndex = categories.indexWhere(
-    (category) => categorizedPhotos[category]!.isEmpty,
-  );
-
-  if (activeIndex == -1) {
-    activeIndex = categories.length - 1;
-  }
+  int activeIndex = categories.indexWhere((category) => categorizedPhotos[category]!.isEmpty);
+  if (activeIndex == -1) activeIndex = categories.length - 1;
 
   int completedCount = 0;
-
   for (final category in categories) {
-    if (categorizedPhotos[category]!.isNotEmpty) {
-      completedCount++;
-    }
+    if (categorizedPhotos[category]!.isNotEmpty) completedCount++;
   }
 
   return Column(
@@ -12556,664 +13000,208 @@ Widget _buildDetailDropdown({
     children: [
       Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.orange.shade50,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: Colors.orange.shade100,
-          ),
-        ),
+        decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.orange.shade100)),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(
-              Icons.photo_library_outlined,
-              color: primaryOrange,
-              size: 25,
-            ),
+            const Icon(Icons.photo_library_outlined, color: primaryOrange, size: 25),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Add property photos',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  const Text('Add property photos', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
-                  const Text(
-                    'Add photos area by area. After completing one area, the next one will open automatically.',
-                    style: TextStyle(
-                      height: 1.4,
-                    ),
-                  ),
+                  const Text('Add photos area by area. After completing one area, the next one will open automatically.', style: TextStyle(height: 1.4)),
                   const SizedBox(height: 10),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: LinearProgressIndicator(
-                      value: completedCount / categories.length,
-                      minHeight: 7,
-                      backgroundColor: Colors.orange.shade100,
-                      valueColor:
-                          const AlwaysStoppedAnimation<Color>(
-                        primaryOrange,
-                      ),
-                    ),
-                  ),
+                  ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: completedCount / categories.length, minHeight: 7, backgroundColor: Colors.orange.shade100, valueColor: const AlwaysStoppedAnimation<Color>(primaryOrange))),
                   const SizedBox(height: 7),
-                  Text(
-                    '$completedCount of ${categories.length} areas completed',
-                    style: const TextStyle(
-                      color: secondaryTextColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
+                  Text('$completedCount of ${categories.length} areas completed', style: const TextStyle(color: secondaryTextColor, fontSize: 12, fontWeight: FontWeight.w500)),
                 ],
               ),
             ),
           ],
         ),
       ),
-
       const SizedBox(height: 18),
+      ...categories.asMap().entries.map((entry) {
+        final index = entry.key;
+        final category = entry.value;
+        final photos = categorizedPhotos[category]!;
+        final isCompleted = photos.isNotEmpty;
+        final isActive = index == activeIndex;
 
-      ...categories.asMap().entries.map(
-        (entry) {
-          final index = entry.key;
-          final category = entry.value;
-          final photos = categorizedPhotos[category]!;
-
-          final isCompleted = photos.isNotEmpty;
-          final isActive = index == activeIndex;
-
-          if (isCompleted && !isActive) {
-            return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: Colors.green.shade200,
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        categoryIcons[category],
-                        color: Colors.green.shade700,
-                        size: 21,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            category,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${photos.length} photo${photos.length == 1 ? '' : 's'} added',
-                            style: TextStyle(
-                              color: Colors.green.shade700,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      Icons.check_circle,
-                      color: Colors.green.shade700,
-                      size: 21,
-                    ),
-                    const SizedBox(width: 4),
-                    IconButton(
-                      tooltip: 'Add more',
-                      onPressed: () {
-                        addPhotosToCategory(category);
-                      },
-                      icon: const Icon(
-                        Icons.add_photo_alternate_outlined,
-                        color: primaryOrange,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
+        if (isCompleted && !isActive) {
           return Container(
-            margin: const EdgeInsets.only(bottom: 18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isActive
-                    ? primaryOrange
-                    : Colors.grey.shade300,
-                width: isActive ? 2 : 1,
-              ),
-              boxShadow: isActive
-                  ? [
-                      BoxShadow(
-                        color: primaryOrange.withOpacity(0.08),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ]
-                  : null,
-            ),
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.green.shade200)),
             child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(9),
-                        decoration: BoxDecoration(
-                          color:
-                              primaryOrange.withOpacity(0.10),
-                          borderRadius:
-                              BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          categoryIcons[category],
-                          color: primaryOrange,
-                          size: 23,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              category,
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Step ${index + 1} of ${categories.length}',
-                              style: const TextStyle(
-                                color: secondaryTextColor,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (photos.isNotEmpty)
-                        Container(
-                          padding:
-                              const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: primaryOrange,
-                            borderRadius:
-                                BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '${photos.length}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  if (photos.isEmpty)
-                    GestureDetector(
-                      onTap: () {
-                        addPhotosToCategory(category);
-                      },
-                      child: Container(
-                        height: 145,
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius:
-                              BorderRadius.circular(12),
-                          border: Border.all(
-                            color:
-                                primaryOrange.withOpacity(0.35),
-                            width: 1.5,
-                          ),
-                        ),
-                        child: Column(
-                          mainAxisAlignment:
-                              MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              padding:
-                                  const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: primaryOrange
-                                    .withOpacity(0.10),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons
-                                    .add_photo_alternate_outlined,
-                                size: 35,
-                                color: primaryOrange,
-                              ),
-                            ),
-                            const SizedBox(height: 9),
-                            Text(
-                              'Add $category photos',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Tap to select photos',
-                              style: TextStyle(
-                                color: secondaryTextColor,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  else
-                    Column(
-                      children: [
-                        SizedBox(
-                          height: 190,
-                          child: PageView.builder(
-                            itemCount: photos.length,
-                            itemBuilder:
-                                (context, photoIndex) {
-                              return GestureDetector(
-                                onTap: () =>
-                                    openFullScreenViewer(
-                                  category,
-                                  photoIndex,
-                                ),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    ClipRRect(
-                                      borderRadius:
-                                          BorderRadius.circular(
-                                        12,
-                                      ),
-                                      child: Image.file(
-                                        File(
-                                          photos[photoIndex].path,
-                                        ),
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (
-                                          context,
-                                          error,
-                                          stackTrace,
-                                        ) {
-                                          return Container(
-                                            color: Colors
-                                                .grey.shade200,
-                                            child: const Icon(
-                                              Icons
-                                                  .broken_image_outlined,
-                                              size: 50,
-                                              color: Colors.grey,
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ),
-
-                                    Positioned(
-                                      top: 8,
-                                      left: 8,
-                                      child: Container(
-                                        padding:
-                                            const EdgeInsets
-                                                .symmetric(
-                                          horizontal: 9,
-                                          vertical: 5,
-                                        ),
-                                        decoration:
-                                            BoxDecoration(
-                                          color: Colors.black54,
-                                          borderRadius:
-                                              BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          '${photoIndex + 1} / ${photos.length}',
-                                          style:
-                                              const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight:
-                                                FontWeight.bold,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-
-                                    if (category ==
-                                            'Front View' &&
-                                        photoIndex == 0)
-                                      Positioned(
-                                        left: 8,
-                                        bottom: 8,
-                                        child: Container(
-                                          padding:
-                                              const EdgeInsets
-                                                  .symmetric(
-                                            horizontal: 9,
-                                            vertical: 5,
-                                          ),
-                                          decoration:
-                                              BoxDecoration(
-                                            color: primaryOrange,
-                                            borderRadius:
-                                                BorderRadius.circular(
-                                              8,
-                                            ),
-                                          ),
-                                          child: const Row(
-                                            mainAxisSize:
-                                                MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                Icons.star,
-                                                size: 14,
-                                                color:
-                                                    Colors.white,
-                                              ),
-                                              SizedBox(width: 4),
-                                              Text(
-                                                'Main Photo',
-                                                style: TextStyle(
-                                                  color:
-                                                      Colors.white,
-                                                  fontWeight:
-                                                      FontWeight.bold,
-                                                  fontSize: 11,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-
-                                    Positioned(
-                                      right: 8,
-                                      top: 8,
-                                      child: GestureDetector(
-                                        onTap: () =>
-                                            removeCategoryPhoto(
-                                          category,
-                                          photoIndex,
-                                        ),
-                                        child: Container(
-                                          padding:
-                                              const EdgeInsets.all(
-                                            6,
-                                          ),
-                                          decoration:
-                                              const BoxDecoration(
-                                            color: Colors.black54,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.close,
-                                            color: Colors.white,
-                                            size: 18,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-
-                        const SizedBox(height: 10),
-
-                        SizedBox(
-                          height: 62,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: photos.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(width: 7),
-                            itemBuilder:
-                                (context, photoIndex) {
-                              return GestureDetector(
-                                onTap: () =>
-                                    openFullScreenViewer(
-                                  category,
-                                  photoIndex,
-                                ),
-                                child: Container(
-                                  width: 62,
-                                  decoration: BoxDecoration(
-                                    borderRadius:
-                                        BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: photoIndex == 0
-                                          ? primaryOrange
-                                          : Colors
-                                              .grey
-                                              .shade300,
-                                      width: photoIndex == 0
-                                          ? 2
-                                          : 1,
-                                    ),
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius:
-                                        BorderRadius.circular(7),
-                                    child: Image.file(
-                                      File(
-                                        photos[photoIndex].path,
-                                      ),
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-
-                        const SizedBox(height: 10),
-
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: () =>
-                                addPhotosToCategory(category),
-                            icon: const Icon(
-                              Icons
-                                  .add_photo_alternate_outlined,
-                            ),
-                            label: Text(
-                              'Add More to $category',
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: primaryOrange,
-                              side: const BorderSide(
-                                color: primaryOrange,
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        if (index < categories.length - 1)
-                          Padding(
-                            padding:
-                                const EdgeInsets.only(top: 10),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.arrow_downward_rounded,
-                                  size: 18,
-                                  color: Colors.green.shade700,
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
-                                    'Next: ${categories[index + 1]}',
-                                    style: TextStyle(
-                                      color:
-                                          Colors.green.shade700,
-                                      fontSize: 12,
-                                      fontWeight:
-                                          FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
+                  Container(width: 38, height: 38, decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(10)), child: Icon(categoryIcons[category], color: Colors.green.shade700, size: 21)),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(category, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)), const SizedBox(height: 2), Text('${photos.length} photo${photos.length == 1 ? '' : 's'} added', style: TextStyle(color: Colors.green.shade700, fontSize: 12))])),
+                  Icon(Icons.check_circle, color: Colors.green.shade700, size: 21),
+                  const SizedBox(width: 4),
+                  IconButton(tooltip: 'Add more', onPressed: () => addPhotosToCategory(category), icon: const Icon(Icons.add_photo_alternate_outlined, color: primaryOrange)),
                 ],
               ),
             ),
           );
-        },
-      ),
+        }
 
+        return Container(
+          margin: const EdgeInsets.only(bottom: 18),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: isActive ? primaryOrange : Colors.grey.shade300, width: isActive ? 2 : 1), boxShadow: isActive ? [BoxShadow(color: primaryOrange.withOpacity(0.08), blurRadius: 10, offset: const Offset(0, 3))] : null),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(padding: const EdgeInsets.all(9), decoration: BoxDecoration(color: primaryOrange.withOpacity(0.10), borderRadius: BorderRadius.circular(10)), child: Icon(categoryIcons[category], color: primaryOrange, size: 23)),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(category, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)), const SizedBox(height: 2), Text('Step ${index + 1} of ${categories.length}', style: const TextStyle(color: secondaryTextColor, fontSize: 12))])),
+                    if (photos.isNotEmpty) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5), decoration: BoxDecoration(color: primaryOrange, borderRadius: BorderRadius.circular(10)), child: Text('${photos.length}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (photos.isEmpty)
+                  GestureDetector(
+                    onTap: () => addPhotosToCategory(category),
+                    child: Container(
+                      height: 145,
+                      width: double.infinity,
+                      decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: primaryOrange.withOpacity(0.35), width: 1.5)),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: primaryOrange.withOpacity(0.10), shape: BoxShape.circle), child: const Icon(Icons.add_photo_alternate_outlined, size: 35, color: primaryOrange)),
+                          const SizedBox(height: 9),
+                          Text('Add $category photos', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                          const SizedBox(height: 4),
+                          const Text('Tap to select photos', style: TextStyle(color: secondaryTextColor, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  Column(
+                    children: [
+                      SizedBox(
+                        height: 190,
+                        child: PageView.builder(
+                          itemCount: photos.length,
+                          itemBuilder: (context, photoIndex) {
+                            return GestureDetector(
+                              onTap: () => openFullScreenViewer(category, photoIndex),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(File(photos[photoIndex].path), fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey.shade200, child: const Icon(Icons.broken_image_outlined, size: 50, color: Colors.grey)))),
+                                  Positioned(top: 8, left: 8, child: Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5), decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)), child: Text('${photoIndex + 1} / ${photos.length}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)))),
+                                  if (category == 'Front View' && photoIndex == 0)
+                                    Positioned(left: 8, bottom: 8, child: Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5), decoration: BoxDecoration(color: primaryOrange, borderRadius: BorderRadius.circular(8)), child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.star, size: 14, color: Colors.white), SizedBox(width: 4), Text('Main Photo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11))]))),
+                                  Positioned(right: 8, top: 8, child: GestureDetector(onTap: () => removeCategoryPhoto(category, photoIndex), child: Container(padding: const EdgeInsets.all(6), decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle), child: const Icon(Icons.close, color: Colors.white, size: 18)))),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        height: 62,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: photos.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 7),
+                          itemBuilder: (context, photoIndex) {
+                            return GestureDetector(
+                              onTap: () => openFullScreenViewer(category, photoIndex),
+                              child: Container(width: 62, decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: photoIndex == 0 ? primaryOrange : Colors.grey.shade300, width: photoIndex == 0 ? 2 : 1)), child: ClipRRect(borderRadius: BorderRadius.circular(7), child: Image.file(File(photos[photoIndex].path), fit: BoxFit.cover))),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: () => addPhotosToCategory(category), icon: const Icon(Icons.add_photo_alternate_outlined), label: Text('Add More to $category'), style: OutlinedButton.styleFrom(foregroundColor: primaryOrange, side: const BorderSide(color: primaryOrange)))),
+                      if (index < categories.length - 1)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: Row(
+                            children: [
+                              Icon(Icons.arrow_downward_rounded, size: 18, color: Colors.green.shade700),
+                              const SizedBox(width: 6),
+                              Expanded(child: Text('Next: ${categories[index + 1]}', style: TextStyle(color: Colors.green.shade700, fontSize: 12, fontWeight: FontWeight.w600))),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        );
+      }),
       if (completedCount == categories.length)
         Container(
           margin: const EdgeInsets.only(top: 2),
           padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.green.shade50,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: Colors.green.shade200,
-            ),
-          ),
+          decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.green.shade200)),
           child: Row(
             children: [
-              Icon(
-                Icons.check_circle,
-                color: Colors.green.shade700,
-                size: 25,
-              ),
+              Icon(Icons.check_circle, color: Colors.green.shade700, size: 25),
               const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Great! All property photo areas have been completed.',
-                  style: TextStyle(
-                    color: Colors.green.shade800,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
+              Expanded(child: Text('Great! All property photo areas have been completed.', style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.w600))),
             ],
           ),
         ),
-
       if (selectedPhotos.isNotEmpty)
         Container(
           margin: const EdgeInsets.only(top: 12),
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(12),
-          ),
+          decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
           child: Row(
             children: [
-              const Icon(
-                Icons.photo_library,
-                color: primaryOrange,
-              ),
+              const Icon(Icons.photo_library, color: primaryOrange),
               const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  '${selectedPhotos.length} total photo${selectedPhotos.length == 1 ? '' : 's'} selected',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
+              Expanded(child: Text('${selectedPhotos.length} total photo${selectedPhotos.length == 1 ? '' : 's'} selected', style: const TextStyle(fontWeight: FontWeight.w500))),
             ],
           ),
-       ),
-   ],
+        ),
+    ],
   );
 }
 
-// ============================================================
-// DISPOSE ADD PROPERTY CONTROLLERS
-// ============================================================
+  // ============================================================
+  // DISPOSE ADD PROPERTY CONTROLLERS
+  // ============================================================
 
-@override
-void dispose() {
-  titleController.dispose();
-  locationController.dispose();
-  rentController.dispose();
-  sizeController.dispose();
-  descriptionController.dispose();
+  @override
+  void dispose() {
+    titleController.dispose();
+    locationController.dispose();
+    rentController.dispose();
+    sizeController.dispose();
+    descriptionController.dispose();
 
-  ownerNameController.dispose();
-  ownerPhoneController.dispose();
-  ownerEmailController.dispose();
+    ownerNameController.dispose();
+    ownerPhoneController.dispose();
+    ownerEmailController.dispose();
 
-  super.dispose();
-}
-
-// ============================================================
-// END ADD PROPERTY SCREEN
-// ============================================================
-
-}
+    super.dispose();
+  }
+} // <-- THIS is the single closing brace for _AddPropertyScreenState
 
 // ============================================================
 // PROPERTY SUBMITTED
 // ============================================================
 
 class PropertySubmittedScreen extends StatelessWidget {
+
   final LandlordListing listing;
 
   const PropertySubmittedScreen({
@@ -13222,72 +13210,44 @@ class PropertySubmittedScreen extends StatelessWidget {
   });
 
   Widget _buildPropertyPhoto(String path) {
+    Widget placeholder() {
+      return Container(
+        color: Colors.grey.shade200,
+        alignment: Alignment.center,
+        child: const Icon(
+          Icons.broken_image_outlined,
+          size: 45,
+          color: Colors.grey,
+        ),
+      );
+    }
+
     if (path.startsWith('http')) {
       return Image.network(
         path,
-        height: 190,
         width: double.infinity,
+        height: double.infinity,
         fit: BoxFit.cover,
-        loadingBuilder: (
-          context,
-          child,
-          loadingProgress,
-        ) {
-          if (loadingProgress == null) {
-            return child;
-          }
-
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
           return Container(
-            height: 190,
-            width: double.infinity,
             color: Colors.grey.shade200,
-            child: const Center(
-              child: CircularProgressIndicator(
-                color: primaryOrange,
-              ),
+            alignment: Alignment.center,
+            child: const CircularProgressIndicator(
+              color: primaryOrange,
             ),
           );
         },
-        errorBuilder: (
-          context,
-          error,
-          stackTrace,
-        ) {
-          return Container(
-            height: 190,
-            width: double.infinity,
-            color: Colors.grey.shade200,
-            child: const Icon(
-              Icons.broken_image_outlined,
-              size: 55,
-              color: Colors.grey,
-            ),
-          );
-        },
+        errorBuilder: (_, __, ___) => placeholder(),
       );
     }
 
     return Image.file(
       File(path),
-      height: 190,
       width: double.infinity,
+      height: double.infinity,
       fit: BoxFit.cover,
-      errorBuilder: (
-        context,
-        error,
-        stackTrace,
-      ) {
-        return Container(
-          height: 190,
-          width: double.infinity,
-          color: Colors.grey.shade200,
-          child: const Icon(
-            Icons.broken_image_outlined,
-            size: 55,
-            color: Colors.grey,
-          ),
-        );
-      },
+      errorBuilder: (_, __, ___) => placeholder(),
     );
   }
 
@@ -13295,9 +13255,7 @@ class PropertySubmittedScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Property Submitted',
-        ),
+        title: const Text('Property Submitted'),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -13305,7 +13263,6 @@ class PropertySubmittedScreen extends StatelessWidget {
           children: [
             const SizedBox(height: 10),
 
-            // Success icon
             const CircleAvatar(
               radius: 45,
               backgroundColor: availableGreen,
@@ -13341,22 +13298,27 @@ class PropertySubmittedScreen extends StatelessWidget {
 
             const SizedBox(height: 22),
 
-            // Property card
+            // PROPERTY CARD
             Card(
               clipBehavior: Clip.antiAlias,
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // MAIN PHOTO
                   if (listing.photoPaths.isNotEmpty)
-                    _buildPropertyPhoto(
-                      listing.photoPaths.first,
+                    SizedBox(
+                      height: 220,
+                      width: double.infinity,
+                      child: _buildPropertyPhoto(
+                        listing.photoPaths.first,
+                      ),
                     )
                   else
                     Container(
-                      height: 150,
+                      height: 220,
                       width: double.infinity,
                       color: Colors.grey.shade200,
+                      alignment: Alignment.center,
                       child: const Icon(
                         Icons.apartment,
                         size: 65,
@@ -13364,6 +13326,36 @@ class PropertySubmittedScreen extends StatelessWidget {
                       ),
                     ),
 
+                  // HORIZONTAL PHOTO THUMBNAILS
+                  if (listing.photoPaths.length > 1)
+                    SizedBox(
+                      height: 86,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        scrollDirection: Axis.horizontal,
+                        itemCount:
+                            listing.photoPaths.length - 1,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          return ClipRRect(
+                            borderRadius:
+                                BorderRadius.circular(8),
+                            child: SizedBox(
+                              width: 100,
+                              child: _buildPropertyPhoto(
+                                listing.photoPaths[index + 1],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+
+                  // PROPERTY DETAILS
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -13387,16 +13379,14 @@ class PropertySubmittedScreen extends StatelessWidget {
                             const Icon(
                               Icons.location_on_outlined,
                               size: 18,
-                              color:
-                                  secondaryTextColor,
+                              color: secondaryTextColor,
                             ),
                             const SizedBox(width: 5),
                             Expanded(
                               child: Text(
                                 listing.location,
                                 style: const TextStyle(
-                                  color:
-                                      secondaryTextColor,
+                                  color: secondaryTextColor,
                                 ),
                               ),
                             ),
@@ -13404,15 +13394,13 @@ class PropertySubmittedScreen extends StatelessWidget {
                         ),
 
                         const SizedBox(height: 10),
-                  
 
                         Text(
                           'KSh ${listing.rent} / month',
                           style: const TextStyle(
                             color: primaryOrange,
                             fontSize: 19,
-                            fontWeight:
-                                FontWeight.bold,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
 
@@ -13423,22 +13411,20 @@ class PropertySubmittedScreen extends StatelessWidget {
                             const Icon(
                               Icons.bed_outlined,
                               size: 18,
-                              color:
-                                  secondaryTextColor,
+                              color: secondaryTextColor,
                             ),
                             const SizedBox(width: 5),
                             Text(
                               listing.bedrooms == 0
                                   ? 'Bedsitter'
                                   : '${listing.bedrooms} bedroom'
-                                    '${listing.bedrooms == 1 ? '' : 's'}',
+                                      '${listing.bedrooms == 1 ? '' : 's'}',
                             ),
                             const SizedBox(width: 16),
                             const Icon(
                               Icons.bathtub_outlined,
                               size: 18,
-                              color:
-                                  secondaryTextColor,
+                              color: secondaryTextColor,
                             ),
                             const SizedBox(width: 5),
                             Text(
@@ -13447,72 +13433,56 @@ class PropertySubmittedScreen extends StatelessWidget {
                           ],
                         ),
 
-                        if (listing.photoPaths
-                            .isNotEmpty)
-                          Padding(
-                            padding:
-                                const EdgeInsets.only(
-                              top: 10,
-                            ),
-                            child: Text(
-                              '${listing.photoPaths.length} photos attached',
-                              style: const TextStyle(
-                                color:
-                                    secondaryTextColor,
-                              ),
+                        if (listing.photoPaths.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            '${listing.photoPaths.length} photos attached',
+                            style: const TextStyle(
+                              color: secondaryTextColor,
+                              fontSize: 12,
                             ),
                           ),
+                        ],
 
                         const SizedBox(height: 14),
 
-                        // Verification status
+                        // VERIFICATION STATUS
                         Container(
                           width: double.infinity,
-                          padding:
-                              const EdgeInsets.all(12),
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color:
-                                Colors.orange.shade50,
+                            color: Colors.orange.shade50,
                             borderRadius:
-                                BorderRadius.circular(
-                              10,
-                            ),
+                                BorderRadius.circular(10),
                             border: Border.all(
-                              color:
-                                  Colors.orange.shade100,
+                              color: Colors.orange.shade100,
                             ),
                           ),
                           child: const Row(
                             children: [
                               Icon(
-                                Icons
-                                    .hourglass_empty,
-                                color:
-                                    primaryOrange,
+                                Icons.hourglass_empty,
+                                color: primaryOrange,
                               ),
                               SizedBox(width: 10),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment:
-                                      CrossAxisAlignment
-                                          .start,
+                                      CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       'Pending verification',
                                       style: TextStyle(
-                                        color:
-                                            primaryOrange,
+                                        color: primaryOrange,
                                         fontWeight:
-                                            FontWeight
-                                                .bold,
+                                            FontWeight.bold,
                                       ),
                                     ),
                                     SizedBox(height: 3),
                                     Text(
                                       'Your property is waiting for review.',
                                       style: TextStyle(
-                                        color:
-                                            secondaryTextColor,
+                                        color: secondaryTextColor,
                                         fontSize: 13,
                                       ),
                                     ),
@@ -13531,11 +13501,10 @@ class PropertySubmittedScreen extends StatelessWidget {
 
             const SizedBox(height: 18),
 
-            // What happens next
+            // WHAT HAPPENS NEXT
             Card(
               child: Padding(
-                padding:
-                    const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment:
                       CrossAxisAlignment.start,
@@ -13551,8 +13520,7 @@ class PropertySubmittedScreen extends StatelessWidget {
                           'What happens next?',
                           style: TextStyle(
                             fontSize: 17,
-                            fontWeight:
-                                FontWeight.bold,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ],
@@ -13591,7 +13559,7 @@ class PropertySubmittedScreen extends StatelessWidget {
 
             const SizedBox(height: 25),
 
-            // View listings
+            // VIEW LISTINGS
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -13607,12 +13575,9 @@ class PropertySubmittedScreen extends StatelessWidget {
                 icon: const Icon(
                   Icons.home_work_outlined,
                 ),
-                label: const Text(
-                  'View My Listings',
-                ),
+                label: const Text('View My Listings'),
                 style: ElevatedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(
+                  padding: const EdgeInsets.symmetric(
                     vertical: 15,
                   ),
                 ),
@@ -13621,7 +13586,7 @@ class PropertySubmittedScreen extends StatelessWidget {
 
             const SizedBox(height: 10),
 
-            // Back home
+            // BACK HOME
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -13635,15 +13600,10 @@ class PropertySubmittedScreen extends StatelessWidget {
                     (route) => false,
                   );
                 },
-                icon: const Icon(
-                  Icons.home_outlined,
-                ),
-                label: const Text(
-                  'Back to Home',
-                ),
+                icon: const Icon(Icons.home_outlined),
+                label: const Text('Back to Home'),
                 style: OutlinedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(
+                  padding: const EdgeInsets.symmetric(
                     vertical: 15,
                   ),
                 ),
@@ -13663,8 +13623,7 @@ class PropertySubmittedScreen extends StatelessWidget {
     required String text,
   }) {
     return Row(
-      crossAxisAlignment:
-          CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(
           icon,
@@ -13674,8 +13633,7 @@ class PropertySubmittedScreen extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 title,
@@ -14033,7 +13991,7 @@ class AgentOwnerRequestsScreen extends StatelessWidget {
 
                       const SizedBox(height: 6),
 
-                      // ============================================================
+  // ============================================================
 // PROPERTY TITLE
 // ============================================================
 
@@ -14209,252 +14167,250 @@ class OwnerAgentRequestsScreen extends StatelessWidget {
   const OwnerAgentRequestsScreen({super.key});
 
   // ============================================================
-  // APPROVE REQUEST
+  // APPROVE REQUEST — OWNER APPROVAL ONLY
   // ============================================================
 
-  // ============================================================
-// APPROVE REQUEST — OWNER APPROVAL ONLY
-// ============================================================
+  Future<void> _approveRequest(
+    BuildContext context,
+    String requestId,
+    Map<String, dynamic> data,
+  ) async {
+    final propertyId =
+        data['propertyId']?.toString() ?? '';
 
-Future<void> _approveRequest(
-  BuildContext context,
-  String requestId,
-  Map<String, dynamic> data,
-) async {
-  final propertyId =
-      data['propertyId']?.toString() ?? '';
+    final agentId =
+        data['agentId']?.toString() ?? '';
 
-  final agentId =
-      data['agentId']?.toString() ?? '';
+    final ownerUid =
+        data['ownerUid']?.toString() ?? '';
 
-  final ownerUid =
-      data['ownerUid']?.toString() ?? '';
-
-  if (propertyId.isEmpty ||
-      agentId.isEmpty ||
-      ownerUid.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'This request is missing required information and cannot be approved.',
-        ),
-      ),
-    );
-
-    return;
-  }
-
-  // ============================================================
-  // CONFIRM OWNER APPROVAL
-  // ============================================================
-
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (dialogContext) {
-      return AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
-        title: const Text(
-          'Approve Agent Request?',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
+    if (propertyId.isEmpty ||
+        agentId.isEmpty ||
+        ownerUid.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This request is missing required information and cannot be approved.',
           ),
         ),
-        content: const Text(
-          'Your approval will be recorded and the request '
-          'will then be sent to RentalApp for verification. '
-          'The agent will not be fully authorized until '
-          'RentalApp completes the verification.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(
-                dialogContext,
-                false,
-              );
-            },
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(
-                dialogContext,
-                true,
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: primaryOrange,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text(
-              'Approve & Send for Review',
-            ),
-          ),
-        ],
       );
-    },
-  );
 
-  if (confirmed != true) {
-    return;
-  }
-
-  // ============================================================
-  // UPDATE FIRESTORE
-  // ============================================================
-
-  try {
-    final firestore =
-        FirebaseFirestore.instance;
-
-    final batch =
-        firestore.batch();
-
-    final requestRef = firestore
-        .collection('ownerRequests')
-        .doc(requestId);
-
-    final propertyRef = firestore
-        .collection('properties')
-        .doc(propertyId);
+      return;
+    }
 
     // ============================================================
-    // OWNER REQUEST
+    // CONFIRM OWNER APPROVAL
     // ============================================================
 
-    batch.update(
-      requestRef,
-      {
-        // Owner has approved.
-        'status': 'owner_approved',
-
-        'ownerApprovalStatus': 'approved',
-
-        'ownerApprovedAt':
-            FieldValue.serverTimestamp(),
-
-        // Admin still needs to review.
-        'adminApprovalStatus': 'pending',
-
-        'adminReviewedAt':
-            FieldValue.delete(),
-
-        'adminRejectionReason':
-            FieldValue.delete(),
-
-        'rejectionReason':
-            FieldValue.delete(),
-
-        'rejectedAt':
-            FieldValue.delete(),
-      },
-    );
-
-    // ============================================================
-    // PROPERTY
-    // ============================================================
-
-    batch.update(
-      propertyRef,
-      {
-        // The landlord is now confirmed as the owner.
-        'ownerId': ownerUid,
-        'ownerType': 'landlord',
-
-        // Agent is the proposed manager.
-        'managedById': agentId,
-        'managedByType': 'agent',
-
-        // Owner approved, but admin has not approved yet.
-        'ownerApprovalStatus': 'approved',
-        'adminApprovalStatus': 'pending',
-
-        'representationStatus':
-            'pending_admin',
-
-        'ownerApprovedAt':
-            FieldValue.serverTimestamp(),
-
-        'adminApprovedAt':
-            FieldValue.delete(),
-
-        'adminRejectionReason':
-            FieldValue.delete(),
-      },
-    );
-
-    await batch.commit();
-
-    if (!context.mounted) return;
-
-    // ============================================================
-    // OWNER MESSAGE
-    // ============================================================
-
-    await showDialog<void>(
+    final confirmed = await showDialog<bool>(
       context: context,
-      barrierDismissible: true,
       builder: (dialogContext) {
         return AlertDialog(
           shape: RoundedRectangleBorder(
-            borderRadius:
-                BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(18),
           ),
-          title: const Row(
-            children: [
-              Icon(
-                Icons.check_circle_outline,
-                color: Colors.green,
-              ),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Approval Received',
-                ),
-              ),
-            ],
+          title: const Text(
+            'Approve Agent Request?',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+            ),
           ),
           content: const Text(
-            'Your approval has been recorded successfully.\n\n'
-            'The request is now awaiting RentalApp verification. '
-            'The agent will only become fully authorized after '
-            'the admin verification process is completed.',
+            'Your approval will be recorded and the request '
+            'will then be sent to KejaFind for verification. '
+            'The agent will not be fully authorized until '
+            'KejaFind completes the verification.',
           ),
           actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  false,
+                );
+              },
+              child: const Text('Cancel'),
+            ),
             ElevatedButton(
               onPressed: () {
                 Navigator.pop(
                   dialogContext,
+                  true,
                 );
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    primaryOrange,
-                foregroundColor:
-                    Colors.white,
+                backgroundColor: primaryOrange,
+                foregroundColor: Colors.white,
               ),
               child: const Text(
-                'Done',
+                'Approve & Send for Review',
               ),
             ),
           ],
         );
       },
     );
-  } catch (e) {
-    if (!context.mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Could not submit the approval.\n$e',
+    if (confirmed != true) {
+      return;
+    }
+
+    // ============================================================
+    // UPDATE FIRESTORE
+    // ============================================================
+
+    try {
+      final firestore =
+          FirebaseFirestore.instance;
+
+      final batch =
+          firestore.batch();
+
+      final requestRef = firestore
+          .collection('ownerRequests')
+          .doc(requestId);
+
+      final propertyRef = firestore
+          .collection('properties')
+          .doc(propertyId);
+
+      // ============================================================
+      // OWNER REQUEST
+      // ============================================================
+
+      batch.update(
+        requestRef,
+        {
+          // Owner has approved.
+          'status': 'owner_approved',
+
+          'ownerApprovalStatus': 'approved',
+
+          'ownerApprovedAt':
+              FieldValue.serverTimestamp(),
+
+          // Admin still needs to review.
+          'adminApprovalStatus': 'pending',
+
+          'adminReviewedAt':
+              FieldValue.delete(),
+
+          'adminRejectionReason':
+              FieldValue.delete(),
+
+          'rejectionReason':
+              FieldValue.delete(),
+
+          'rejectedAt':
+              FieldValue.delete(),
+        },
+      );
+
+      // ============================================================
+      // PROPERTY
+      // ============================================================
+      //
+      // IMPORTANT — DO NOT CHANGE:
+      //   - 'ownerId'      (set correctly at creation time; the
+      //                     security rules forbid changing it)
+      //   - 'managedById'  (already the agent's uid from creation)
+      //   - 'ownerType'    (set correctly at creation time)
+      //
+      // Only the representation-related status fields are updated
+      // here. The rules whitelist permits exactly these keys for
+      // the owner's approval step.
+
+      batch.update(
+        propertyRef,
+        {
+          // Owner approved, but admin has not approved yet.
+          'ownerApprovalStatus': 'approved',
+          'adminApprovalStatus': 'pending',
+
+          'representationStatus': 'pending_admin',
+
+          'ownerApprovedAt':
+              FieldValue.serverTimestamp(),
+
+          'adminApprovedAt':
+              FieldValue.delete(),
+
+          'adminRejectionReason':
+              FieldValue.delete(),
+        },
+      );
+
+      await batch.commit();
+
+      if (!context.mounted) return;
+
+      // ============================================================
+      // OWNER MESSAGE
+      // ============================================================
+
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius:
+                  BorderRadius.circular(18),
+            ),
+            title: const Row(
+              children: [
+                Icon(
+                  Icons.check_circle_outline,
+                  color: Colors.green,
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Approval Received',
+                  ),
+                ),
+              ],
+            ),
+            content: const Text(
+              'Your approval has been recorded successfully.\n\n'
+              'The request is now awaiting KejaFind verification. '
+              'The agent will only become fully authorized after '
+              'the admin verification process is completed.',
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(
+                    dialogContext,
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                      primaryOrange,
+                  foregroundColor:
+                      Colors.white,
+                ),
+                child: const Text(
+                  'Done',
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not submit the approval.\n$e',
+          ),
         ),
-      ),
-    );
+      );
+    }
   }
-}
+
   // ============================================================
   // REJECT REQUEST
   // ============================================================
@@ -15465,9 +15421,6 @@ class AdminAgentVerificationScreen
               'approved',
 
           'adminApprovalStatus':
-              'approved',
-
-          'ownerApprovalStatus':
               'approved',
 
           'adminApprovedAt':
@@ -16932,10 +16885,15 @@ content: const Text(
                 size:
                     (data['size'] as num?)?.toInt() ?? 0,
                 availability:
-                    data['availability']?.toString() ??
-                        'Available now',
-                description:
-                    data['description']?.toString() ?? '',
+                  data['availability']?.toString() ??
+                      'Available now',
+
+              availableFrom: data['availableFrom'] is Timestamp
+                  ? (data['availableFrom'] as Timestamp).toDate()
+                  : null,
+
+              description:
+                  data['description']?.toString() ?? '',
                 amenities: List<String>.from(
                   data['amenities'] ?? [],
                 ),
@@ -18526,9 +18484,8 @@ bool isAgent = false;
                   subtitle:
                       'Current: ${listing.availability}',
                   onPressed: () async {
-                    String selectedAvailability =
-                        listing.availability;
-
+                    String selectedAvailability = listing.availability;
+                    DateTime? selectedAvailableFrom = listing.availableFrom;
                     final result =
                         await showModalBottomSheet<
                             String>(
@@ -18546,19 +18503,20 @@ bool isAgent = false;
                             context,
                             setModalState,
                           ) {
-                            return Padding(
-                              padding:
-                                  const EdgeInsets.all(
-                                20,
-                              ),
-                              child: Column(
-                                mainAxisSize:
-                                    MainAxisSize.min,
-                                crossAxisAlignment:
-                                    CrossAxisAlignment
-                                        .start,
-                                children: [
-                                  const Text(
+                            return SafeArea(
+                            child: SingleChildScrollView(
+                              child: Padding(
+                                padding: EdgeInsets.fromLTRB(
+                                  20,
+                                  20,
+                                  20,
+                                  20 + MediaQuery.of(context).viewInsets.bottom,
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                     const Text(
                                     'Change Availability',
                                     style: TextStyle(
                                       fontSize: 20,
@@ -18602,16 +18560,53 @@ bool isAgent = false;
                                             return;
                                           }
 
-                                          setModalState(
-                                            () {
-                                              selectedAvailability =
-                                                  value;
-                                            },
-                                          );
+                                          setModalState(() {
+                                              selectedAvailability = value;
+
+                                              if (value != 'Available this month' &&
+                                                  value != 'Available next month') {
+                                                selectedAvailableFrom = null;
+                                              }
+                                            });
                                         },
                                       );
                                     },
                                   ),
+                                if (selectedAvailability ==
+                                                'Available this month' ||
+                                            selectedAvailability ==
+                                                'Available next month') ...[
+                                          const SizedBox(height: 12),
+                                          OutlinedButton.icon(
+                                            onPressed: () async {
+                                              final pickedDate = await showDatePicker(
+                                                context: context,
+                                                initialDate: selectedAvailableFrom ??
+                                                    DateTime.now().add(
+                                                      const Duration(days: 1),
+                                                    ),
+                                                firstDate: DateTime.now(),
+                                                lastDate: DateTime.now().add(
+                                                  const Duration(days: 365),
+                                                ),
+                                              );
+
+                                              if (pickedDate != null) {
+                                                setModalState(() {
+                                                  selectedAvailableFrom = pickedDate;
+                                                });
+                                              }
+                                            },
+                                            icon: const Icon(Icons.calendar_month),
+                                            label: Text(
+                                              selectedAvailableFrom == null
+                                                  ? 'Choose expected availability date'
+                                                  : 'Expected date: ${selectedAvailableFrom!.day}/'
+                                                      '${selectedAvailableFrom!.month}/'
+                                                      '${selectedAvailableFrom!.year}',
+                                            ),
+                                          ),
+                                        ],
                                   const SizedBox(
                                       height: 12),
                                   SizedBox(
@@ -18647,18 +18642,18 @@ bool isAgent = false;
                                   const SizedBox(
                                       height: 8),
                                 ],
+                               ),
                               ),
+                             ),
                             );
                           },
                         );
                       },
                     );
 
-                    if (result == null ||
-                        result ==
-                            listing.availability) {
-                      return;
-                    }
+                    if (result == null) {
+                            return;
+                          }
 
                     try {
                       await FirebaseFirestore.instance
@@ -18666,6 +18661,15 @@ bool isAgent = false;
                           .doc(listing.id)
                           .update({
                         'availability': result,
+                        'availableFrom':
+                            (result == 'Available this month' ||
+                                    result == 'Available next month')
+                                ? (selectedAvailableFrom != null
+                                    ? Timestamp.fromDate(
+                                        selectedAvailableFrom!,
+                                      )
+                                    : null)
+                                : null,
                       });
 
                       if (!context.mounted) {
@@ -19007,6 +19011,7 @@ class _EditPropertyScreenState
   late final TextEditingController descriptionController;
 
   late String selectedPropertyType;
+  late String selectedPropertySetting;
   late String selectedBedrooms;
   late String selectedBathrooms;
   late String selectedAvailability;
@@ -19028,6 +19033,13 @@ class _EditPropertyScreenState
   'Gated Community',
   'Serviced Apartment',
   'Studio / Bedsitter',
+  'Other',
+];
+final List<String> propertySettingOptions = [
+  'Apartment Block',
+  'Standalone / Own Compound',
+  'Gated Community',
+  'Shared Compound',
   'Other',
 ];
 
@@ -19135,6 +19147,15 @@ class _EditPropertyScreenState
       selectedPropertyType =
           propertyTypeOptions.first;
     }
+    selectedPropertySetting =
+    widget.listing.propertySetting;
+
+        if (!propertySettingOptions.contains(
+          selectedPropertySetting,
+        )) {
+          selectedPropertySetting =
+              propertySettingOptions.first;
+        }
 
     if (widget.listing.bedrooms == 0) {
       selectedBedrooms = 'Bedsitter';
@@ -19303,6 +19324,7 @@ class _EditPropertyScreenState
     .update({
   'title': titleController.text.trim(),
   'propertyType': selectedPropertyType,
+  'propertySetting': selectedPropertySetting,
   'county': selectedCounty,
   'city': selectedCity,
   'area': selectedArea,
@@ -19914,6 +19936,59 @@ class _EditPropertyScreenState
                           setState(() {
                             selectedPropertyType =
                                 value;
+                          });
+                        }
+                      },
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    // PROPERTY SETTING
+                    const Text(
+                      'Property setting',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: secondaryTextColor,
+                      ),
+                    ),
+
+                    const SizedBox(height: 7),
+
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedPropertySetting,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(
+                          Icons.location_city_outlined,
+                          color: primaryOrange,
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFFFFF8F2),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(
+                            color: primaryOrange.withOpacity(0.10),
+                          ),
+                        ),
+                      ),
+                      items: propertySettingOptions.map(
+                        (setting) => DropdownMenuItem<String>(
+                          value: setting,
+                          child: Text(
+                            setting,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ).toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            selectedPropertySetting = value;
                           });
                         }
                       },
@@ -22054,8 +22129,7 @@ class _PropertyViewingScheduleScreenState
                                       value: schedule[dayKeys[i]]![
                                               'enabled'] ==
                                           true,
-                                      activeThumbColor:
-                                          primaryOrange,
+                                       activeColor: primaryOrange,
                                       onChanged: (enabled) {
                                         setState(() {
                                           schedule[dayKeys[i]]![
