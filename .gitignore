@@ -91,3 +91,11 @@ firestore.rules.backup*
 
 # Test temporary folders
 tests/
+# Catch-all for stray backups and audits
+*-backup
+*-backup-*
+*.build-success-backup
+*.profile-backup
+audit-*.txt
+firestore.rules.backup*
+storage.rules.backup*
