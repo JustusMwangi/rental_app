@@ -855,46 +855,50 @@ String selectedGoogleRole = 'tenant';
             // HEADER
             // ==================================================
 
-              Container(
-              padding: const EdgeInsets.all(22),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [
-                    primaryOrange,
-                    darkOrange,
-                  ],
+                                     Stack(
+              alignment: Alignment.center,
+              children: [
+                // 1. THE BANNER IMAGE
+                Container(
+                  width: double.infinity,
+                  height: 160,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(22),
+                    image: const DecorationImage(
+                      image: AssetImage('assets/icons/login_banner.png'),
+                      fit: BoxFit.fitWidth,
+                    ),
+                  ),
                 ),
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Column(
-                children: [
-                  // Replace Icon with your logo image
-                    Image.asset(
-                      'assets/icons/logo_white.png', // <--- Updated path
-                      height: 55,
-                      width: 55,
-                      // color: Colors.white, // Leave this commented out if the graphic is already white
-                    ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'KejaFind',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                    ),
+
+                // 2. THE TEXT (Overlay)
+                Positioned(
+                  top: 50, // Adjust this to move the text up/down
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'KejaFind',
+                        style: TextStyle(
+                          color: Color(0xFF29231F), 
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Find your next home',
+                        style: TextStyle(
+                          color: Color(0xFF75675C), 
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 5),
-                  const Text(
-                    'Find your next home',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 15,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
+
             const SizedBox(height: 30),
 
             Text(
@@ -1103,22 +1107,23 @@ if (!isLogin) ...[
             // GOOGLE
             // ==================================================
 
-            SizedBox(
+                        SizedBox(
               width: double.infinity,
               height: 52,
               child: OutlinedButton.icon(
                 onPressed: isLoading
                     ? null
                     : _signInWithGoogle,
-                icon: const Icon(
-                  Icons.account_circle_outlined,
+                icon: Image.asset(
+                  'assets/icons/google_logo.png', // <-- YOUR NEW LOGO
+                  height: 24, // Keeps it scaled nicely with the text
+                  width: 24,
                 ),
                 label: const Text(
                   'Continue with Google',
                 ),
               ),
             ),
-
             const SizedBox(height: 25),
 
             // ==================================================
@@ -1299,6 +1304,93 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   controller.dispose();
 }
+     Future<void> _deleteAccount(BuildContext context, User user) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          icon: const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 50),
+          title: const Text('Delete Account?'),
+          content: const Text(
+            'This will permanently delete your account and remove your data. This action cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Delete Permanently', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    if (!context.mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final firestore = FirebaseFirestore.instance;
+
+      // 1. Delete Firestore Data FIRST (while the user is still authenticated)
+      await firestore.collection('users').doc(user.uid).delete();
+
+      final properties = await firestore.collection('properties').where('ownerId', isEqualTo: user.uid).get();
+      for (var doc in properties.docs) { await doc.reference.delete(); }
+
+      final managedProperties = await firestore.collection('properties').where('managedById', isEqualTo: user.uid).get();
+      for (var doc in managedProperties.docs) { await doc.reference.delete(); }
+
+      final viewings = await firestore.collection('viewing_requests').where('tenantId', isEqualTo: user.uid).get();
+      for (var doc in viewings.docs) { await doc.reference.delete(); }
+
+      // 2. Delete Auth Account LAST
+      await user.delete();
+
+      if (!context.mounted) return;
+      Navigator.pop(context); // Close loading
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Account deleted successfully.')),
+      );
+
+    } on FirebaseAuthException catch (e) {
+      if (!context.mounted) return;
+      Navigator.pop(context); // Close loading
+
+      if (e.code == 'requires-recent-login') {
+        // If Firebase requires a fresh login, we must sign out and force re-login
+        await FirebaseAuth.instance.signOut();
+        
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('For security, please log back in to delete your account.'),
+            duration: Duration(seconds: 5),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete account: ${e.message}')),
+        );
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.pop(context); // Close loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1349,6 +1441,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
+
                 _buildAboutCard(context),
               ],
             );
@@ -1723,6 +1816,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ],
 
+                  const SizedBox(height: 12),
+
                   const SizedBox(height: 8),
                   _buildAboutCard(context),
                 ],
@@ -1737,69 +1832,72 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildProfileHeader(User? user) {
     final isSignedIn = user != null;
 
-    return Container(
-      padding: const EdgeInsets.all(20),
+        return Container(
+      padding: const EdgeInsets.all(0), // Padding moved to inner container
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [
-            primaryOrange,
-            darkOrange,
+        borderRadius: BorderRadius.circular(20),
+        image: const DecorationImage(
+          image: AssetImage('assets/icons/splash_background.png'),
+          fit: BoxFit.cover,
+        ),
+      ),
+      // Inner container for the dark overlay so white text is readable
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          color: Colors.black.withOpacity(0.4), 
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 32,
+              backgroundColor: Colors.white,
+              backgroundImage: user?.photoURL != null
+                  ? NetworkImage(user!.photoURL!)
+                  : null,
+              child: user?.photoURL == null
+                  ? const Icon(
+                      Icons.person,
+                      color: primaryOrange,
+                      size: 35,
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 15),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    user?.displayName ?? 'KejaFind User',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 19,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    isSignedIn
+                        ? (user.email ?? 'Account signed in')
+                        : 'Tenant account',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 32,
-            backgroundColor: Colors.white,
-            backgroundImage: user?.photoURL != null
-                ? NetworkImage(user!.photoURL!)
-                : null,
-            child: user?.photoURL == null
-                ? const Icon(
-                    Icons.person,
-                    color: primaryOrange,
-                    size: 35,
-                  )
-                : null,
-          ),
-          const SizedBox(width: 15),
-          Expanded(
-            child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
-              children: [
-                Text(
-                  user?.displayName ??
-                      'RentalApp User',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 19,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  isSignedIn
-                      ? (user.email ??
-                          'Account signed in')
-                      : 'Tenant account',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                  ),
-                  overflow:
-                      TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
+   Widget _buildAboutCard(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
 
-  Widget _buildAboutCard(BuildContext context) {
     return Card(
       child: ListTile(
         leading: const Icon(
@@ -1814,26 +1912,59 @@ class _ProfileScreenState extends State<ProfileScreen> {
           size: 18,
         ),
         onTap: () {
-          showAboutDialog(
+          showDialog(
             context: context,
-            applicationName: 'KejaFind',
-            applicationVersion: '1.0.0',
-            applicationIcon: const Icon(
-              Icons.home,
-              color: primaryOrange,
-              size: 40,
-            ),
-            children: const [
-              Text(
-                'KejaFind helps tenants discover available homes online instead of walking around looking for houses.',
-              ),
-            ],
+            builder: (dialogContext) {
+              return AlertDialog(
+                title: const Text('About KejaFind'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'KejaFind helps tenants discover available homes online instead of walking around looking for houses.',
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Version 1.0.0',
+                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      '© 2026 Justus Arisi. All rights reserved.',
+                      style: TextStyle(color: Colors.grey, fontSize: 11),
+                    ),
+                    const Divider(height: 30),
+                    
+                    // THE DANGER ZONE
+                    if (user != null)
+                      TextButton.icon(
+                        onPressed: () {
+                          Navigator.pop(dialogContext); // Close this dialog
+                          _deleteAccount(context, user); // Trigger delete
+                        },
+                        icon: const Icon(Icons.delete_forever, color: Colors.red),
+                        label: const Text(
+                          'Delete My Account',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                      ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('Close'),
+                  ),
+                ],
+              );
+            },
           );
         },
       ),
     );
   }
-}
+} // <--- THIS BRACE CLOSES THE CLASS. Make sure it is there!
 
 // ============================================================
 // EMAIL VERIFICATION SCREEN
@@ -2973,7 +3104,9 @@ class FirestoreRentalProperties extends StatelessWidget {
 // ============================================================
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback? onProfileTap;
+  
+  const HomeScreen({super.key, this.onProfileTap});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -3036,9 +3169,12 @@ Widget build(BuildContext context) {
           ),
         ],
       ),
-      actions: [
+            actions: [
         IconButton(
-          onPressed: () {},
+          onPressed: () {
+            // This triggers the callback passed from MainNavigationScreen
+            widget.onProfileTap?.call(); 
+          },
           icon: const Icon(Icons.person_outline),
         ),
       ],
@@ -3064,59 +3200,70 @@ Widget build(BuildContext context) {
 Widget _buildHero() {
   return Container(
     margin: const EdgeInsets.all(16),
-    padding: const EdgeInsets.all(22),
     decoration: BoxDecoration(
-      gradient: const LinearGradient(
-        colors: [
-          primaryOrange,
-          darkOrange,
-        ],
-      ),
       borderRadius: BorderRadius.circular(24),
+      image: const DecorationImage(
+        image: AssetImage('assets/icons/splash_background.png'),
+        fit: BoxFit.cover,
+      ),
     ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Find a home you’ll love.',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 28,
-            fontWeight: FontWeight.bold,
-          ),
+    child: Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.black.withOpacity(0.4),
+            Colors.black.withOpacity(0.7),
+          ],
         ),
-        const SizedBox(height: 10),
-        const Text(
-          'Search real rental homes by location, price and bedrooms.',
-          style: TextStyle(
-            color: Colors.white70,
-            fontSize: 15,
+      ),
+      padding: const EdgeInsets.all(22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Find a home you’ll love.',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-        ),
-        const SizedBox(height: 20),
-        TextField(
-          controller: searchController,
-          textInputAction: TextInputAction.search,
-          onSubmitted: (_) => performSearch(),
-          decoration: InputDecoration(
-            hintText: 'Search area, bedroom or property',
-            filled: true,
-            fillColor: Colors.white,
-            prefixIcon: const Icon(Icons.search),
-            suffixIcon: IconButton(
-              onPressed: performSearch,
-              icon: const Icon(
-                Icons.arrow_forward,
-                color: darkOrange,
+          const SizedBox(height: 10),
+          const Text(
+            'Search real rental homes by location, price and bedrooms.',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            controller: searchController,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (_) => performSearch(),
+            decoration: InputDecoration(
+              hintText: 'Search area, bedroom or property',
+              filled: true,
+              fillColor: Colors.white,
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: IconButton(
+                onPressed: performSearch,
+                icon: const Icon(
+                  Icons.arrow_forward,
+                  color: darkOrange,
+                ),
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide.none,
               ),
             ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
-            ),
           ),
-        ),
-      ],
+        ],
+      ),
     ),
   );
 }
@@ -13716,9 +13863,15 @@ class _MainNavigationScreenState
         FirebaseAuth.instance.currentUser?.uid ??
             'logged_out';
 
-    switch (selectedIndex) {
+      switch (selectedIndex) {
       case 0:
-        return const HomeScreen();
+        return HomeScreen(
+          onProfileTap: () {
+            setState(() {
+              selectedIndex = 3; // Index 3 is the Profile tab
+            });
+          },
+        );
 
       case 1:
   return SavedScreen(

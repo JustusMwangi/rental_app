@@ -100,7 +100,5 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/icons/logo_transparent.png" # The orange logo
-  adaptive_icon_background: "#FFFFFF" # Pure white background
-  adaptive_icon_foreground: "assets/icons/logo_transparent.png" # The orange logo
+  image_path: "assets/icons/app_icon_3d.png"
   remove_alpha_ios: true
