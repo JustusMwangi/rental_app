@@ -1,16 +1,199 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>KejaFind</title>
-    <meta charset="utf-8">
-    <style>body { font-family: sans-serif; text-align: center; padding: 50px; }</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KejaFind - Find a Place to Call Home</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #F57C00;
+            --primary-dark: #E65100;
+            --bg: #FFF8F0;
+            --text: #29231F;
+            --text-light: #75675C;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Helvetica Neue', Arial, sans-serif; }
+
+        body { background-color: var(--bg); color: var(--text); line-height: 1.6; }
+
+        /* --- Navbar --- */
+        nav {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 20px 5%; background: white;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05); position: sticky; top: 0; z-index: 100;
+        }
+        .nav-logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.5rem; color: var(--text); }
+        .nav-logo img { height: 40px; }
+        .nav-logo span { color: var(--primary); }
+        .nav-links a { margin-left: 20px; text-decoration: none; color: var(--text-light); font-weight: 500; transition: 0.3s; }
+        .nav-links a:hover { color: var(--primary); }
+        .btn-download {
+            background: var(--primary); color: white !important; padding: 10px 20px;
+            border-radius: 25px; font-weight: bold;
+        }
+
+        /* --- Hero Section --- */
+        .hero {
+            display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+            padding: 60px 5%; gap: 40px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,248,240,0.9)), url('splash_bg.png');
+            background-size: cover; background-position: center;
+        }
+        .hero-text { flex: 1; min-width: 300px; max-width: 500px; }
+        .hero-text h1 { font-size: 3.5rem; line-height: 1.1; margin-bottom: 20px; font-weight: 900; letter-spacing: -1px; }
+        .hero-text h1 span { color: var(--primary); }
+        .hero-text p { font-size: 1.2rem; color: var(--text-light); margin-bottom: 30px; }
+        .hero-buttons { display: flex; gap: 15px; }
+        .btn-primary {
+            background: var(--primary); color: white; padding: 15px 30px; border-radius: 12px;
+            text-decoration: none; font-weight: bold; font-size: 1.1rem; display: inline-flex; align-items: center; gap: 10px;
+            transition: 0.3s; box-shadow: 0 10px 20px rgba(245, 124, 0, 0.3);
+        }
+        .btn-primary:hover { background: var(--primary-dark); transform: translateY(-3px); }
+        .hero-mockup { flex: 1; min-width: 300px; max-width: 400px; text-align: center; }
+        .hero-mockup img { width: 100%; max-width: 300px; border-radius: 40px; box-shadow: 0 20px 40px rgba(0,0,0,0.15); border: 8px solid #333; }
+
+        /* --- Features Section --- */
+        .features { padding: 80px 5%; text-align: center; background: white; }
+        .features h2 { font-size: 2.5rem; margin-bottom: 10px; }
+        .features p.subtitle { color: var(--text-light); margin-bottom: 50px; font-size: 1.1rem; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 30px; max-width: 1000px; margin: 0 auto; }
+        .feature-card {
+            padding: 30px; border-radius: 20px; background: var(--bg); border: 1px solid #eee;
+            transition: 0.3s; text-align: left;
+        }
+        .feature-card:hover { transform: translateY(-5px); box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
+        .feature-icon {
+            width: 60px; height: 60px; background: rgba(245, 124, 0, 0.1); color: var(--primary);
+            border-radius: 15px; display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem; margin-bottom: 20px;
+        }
+        .feature-card h3 { margin-bottom: 10px; font-size: 1.3rem; }
+        .feature-card p { color: var(--text-light); font-size: 0.95rem; }
+
+        /* --- Screenshots --- */
+        .screenshots { padding: 80px 5%; text-align: center; background: var(--bg); }
+        .screenshots h2 { font-size: 2.5rem; margin-bottom: 40px; }
+        .screenshot-grid { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
+        .screenshot-grid img {
+            width: 220px; border-radius: 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            border: 4px solid white;
+        }
+
+        /* --- CTA Footer --- */
+        .cta {
+            padding: 80px 5%; text-align: center; background: var(--primary); color: white;
+        }
+        .cta h2 { font-size: 2.5rem; margin-bottom: 20px; }
+        .cta p { font-size: 1.2rem; margin-bottom: 30px; opacity: 0.9; }
+        .btn-white {
+            background: white; color: var(--primary); padding: 15px 40px; border-radius: 12px;
+            text-decoration: none; font-weight: bold; font-size: 1.1rem; display: inline-flex; align-items: center; gap: 10px;
+        }
+
+        footer { padding: 30px; text-align: center; background: #1A1A1A; color: #888; font-size: 0.9rem; }
+        footer a { color: #888; text-decoration: none; margin: 0 10px; }
+        footer a:hover { color: white; }
+
+        @media (max-width: 768px) {
+            .hero-text h1 { font-size: 2.5rem; }
+            .nav-links { display: none; }
+        }
+    </style>
 </head>
 <body>
-    <h1>KejaFind</h1>
-    <p>Find a place to call home.</p>
-    <p>
-        <a href="privacy.html">Privacy Policy</a> | 
-        <a href="delete-account.html">Delete Account</a>
-    </p>
+
+    <!-- NAVBAR -->
+    <nav>
+        <div class="nav-logo">
+            <img src="logo.png" alt="KejaFind Logo">
+            Keja<span>Find</span>
+        </div>
+        <div class="nav-links">
+            <a href="#features">Features</a>
+            <a href="#screenshots">Screenshots</a>
+            <a href="privacy.html">Privacy</a>
+            <a href="delete-account.html">Delete Account</a>
+            <a href="#" class="btn-download">Download App</a>
+        </div>
+    </nav>
+
+    <!-- HERO SECTION -->
+    <section class="hero">
+        <div class="hero-text">
+            <h1>Find a place to <span>call home.</span></h1>
+            <p>KejaFind makes searching for rental homes in Kenya easier than ever. Browse verified listings, connect directly with landlords and agents, and book viewings—all in one app.</p>
+            <div class="hero-buttons">
+                <a href="#" class="btn-primary">
+                    <i class="fab fa-google-play"></i> Get it on Google Play
+                </a>
+            </div>
+        </div>
+        <div class="hero-mockup">
+            <!-- Replace with your actual app screenshot -->
+            <img src="screenshot_home.png" alt="KejaFind Home Screen">
+        </div>
+    </section>
+
+    <!-- FEATURES SECTION -->
+    <section class="features" id="features">
+        <h2>Why Choose KejaFind?</h2>
+        <p class="subtitle">Built for the Kenyan rental market.</p>
+        
+        <div class="grid">
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fas fa-search"></i></div>
+                <h3>Smart Search</h3>
+                <p>Filter by County, City, Estate, and rent price to find exactly what you're looking for.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fas fa-calendar-check"></i></div>
+                <h3>Book Viewings</h3>
+                <p>Schedule a viewing directly through the app. The landlord or agent approves it instantly.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fas fa-shield-alt"></i></div>
+                <h3>Verified Listings</h3>
+                <p>Every property is reviewed by our admin team to ensure it is genuine and available.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fas fa-home"></i></div>
+                <h3>For Landlords & Agents</h3>
+                <p>List your property, upload photos, manage viewings, and track your listings easily.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- SCREENSHOTS SECTION -->
+    <section class="screenshots" id="screenshots">
+        <h2>See KejaFind in Action</h2>
+        <div class="screenshot-grid">
+            <img src="screenshot_home.png" alt="Home Screen">
+            <img src="screenshot_profile.png" alt="Profile Screen">
+            <!-- Add more screenshots here -->
+        </div>
+    </section>
+
+    <!-- CTA SECTION -->
+    <section class="cta">
+        <h2>Ready to find your next home?</h2>
+        <p>Download KejaFind today and start searching.</p>
+        <a href="#" class="btn-white">
+            <i class="fab fa-google-play"></i> Download on Google Play
+        </a>
+    </section>
+
+    <!-- FOOTER -->
+    <footer>
+        <p>&copy; 2026 Justus Arisi (BRIOLITA DEVELOPERS). All rights reserved.</p>
+        <p>
+            <a href="privacy.html">Privacy Policy</a> | 
+            <a href="delete-account.html">Delete Account</a> |
+            <a href="mailto:kejafindkenya@gmail.com">Contact Support</a>
+        </p>
+    </footer>
+
 </body>
 </html>
